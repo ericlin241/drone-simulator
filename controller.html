@@ -4,6 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>無人機遙控器</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="canonical" href="https://ericlin241.github.io/drone-simulator/controller.html">
+  <meta name="description" content="Web 無人機模擬器手機遙控器，支援美國手、日本手、靈敏度調節與內八解鎖。">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_TW">
+  <meta property="og:title" content="Web 無人機模擬器｜手機遙控器">
+  <meta property="og:description" content="雙搖桿即時操控，支援美國手、日本手、內八解鎖與靈敏度調節。">
+  <meta property="og:image" content="https://ericlin241.github.io/drone-simulator/og-cover.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Web 無人機模擬器｜手機遙控器">
+  <meta name="twitter:description" content="雙搖桿即時操控，支援美國手、日本手、內八解鎖與靈敏度調節。">
+  <meta name="twitter:image" content="https://ericlin241.github.io/drone-simulator/og-cover.png">
   <style>
     :root {
       color-scheme: dark;
@@ -56,19 +71,18 @@
     .brand small { display: block; margin-top: 2px; color: #6098b6; font-size: .55rem; letter-spacing: .12em; }
 
     .mode-switch {
-      position: absolute;
-      left: 50%;
+      grid-column: 1 / -1;
       display: flex;
+      width: 100%;
       padding: 3px;
       border: 1px solid rgba(255,255,255,.1);
       border-radius: 11px;
       background: rgba(0,0,0,.22);
-      top: 50%;
-      transform: translate(-50%, -50%);
       touch-action: manipulation;
     }
 
     .mode-switch button {
+      flex: 1;
       padding: 6px 12px;
       border: 0;
       border-radius: 8px;
@@ -148,6 +162,54 @@
     .command-button:active { transform: scale(.96); background: #234b64; }
     .command-button.wide { grid-column: 1 / -1; }
     .command-button.danger { border-color: rgba(255,82,111,.38); background: rgba(113,25,43,.6); color: #ffb3c0; }
+
+    .sensitivity-control {
+      grid-column: 1 / -1;
+      padding: 7px 8px 6px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 11px;
+      background: rgba(5, 17, 28, .76);
+      color: #93aabd;
+      font-size: clamp(.5rem, 1.25vw, .62rem);
+      text-align: center;
+    }
+    .sensitivity-control output { color: #75ddff; font-family: ui-monospace, monospace; }
+    .sensitivity-control input { width: 100%; height: 16px; margin: 3px 0 0; accent-color: #47c8f3; touch-action: manipulation; }
+
+    .gesture-hint {
+      position: absolute;
+      z-index: 5;
+      left: 50%;
+      bottom: 7px;
+      margin: 0;
+      color: rgba(177,205,222,.65);
+      font-size: .52rem;
+      letter-spacing: .03em;
+      transform: translateX(-50%);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .feedback-toast {
+      position: absolute;
+      z-index: 20;
+      top: 50%;
+      left: 50%;
+      min-width: 210px;
+      padding: 14px 20px;
+      border: 1px solid rgba(255,91,111,.5);
+      border-radius: 16px;
+      background: rgba(79,10,23,.92);
+      box-shadow: 0 12px 44px rgba(0,0,0,.5);
+      color: #fff;
+      font-weight: 800;
+      text-align: center;
+      opacity: 0;
+      transform: translate(-50%, -44%) scale(.92);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+    }
+    .feedback-toast.visible { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
     .telemetry-strip {
       position: absolute;
@@ -235,6 +297,8 @@
       .stick-zone { inset: 22px; }
       .telemetry-strip { top: 48px; }
       .command-button { min-height: 34px; }
+      .sensitivity-control { padding-block: 4px; }
+      .gesture-hint { bottom: 3px; }
     }
   </style>
 </head>
@@ -242,10 +306,6 @@
   <main id="controller">
     <header class="topbar">
       <div class="brand"><h1>DRONE CONTROL</h1><small>WEB FLIGHT LAB</small></div>
-      <div class="mode-switch" role="group" aria-label="搖桿模式">
-        <button id="mode-us" class="active" type="button" aria-pressed="true">美國手 M2</button>
-        <button id="mode-jp" type="button" aria-pressed="false">日本手 M1</button>
-      </div>
       <div id="status">準備連線</div>
     </header>
 
@@ -267,11 +327,18 @@
       </div>
 
       <nav class="center-controls" aria-label="飛行功能">
+        <div class="mode-switch" role="group" aria-label="搖桿模式">
+          <button id="mode-us" class="active" type="button" aria-pressed="true">美國手</button>
+          <button id="mode-jp" type="button" aria-pressed="false">日本手</button>
+        </div>
         <button id="arm-button" class="command-button wide" type="button">解鎖馬達</button>
         <button class="command-button" type="button" data-command="takeoff">自動起飛</button>
         <button class="command-button" type="button" data-command="land">自動降落</button>
         <button class="command-button" type="button" data-command="reset">重設位置</button>
         <button class="command-button danger" type="button" data-command="emergency">緊急停止</button>
+        <label class="sensitivity-control">靈敏度 <output id="sensitivity-value">65%</output>
+          <input id="sensitivity" type="range" min="35" max="100" step="5" value="65" aria-label="搖桿靈敏度">
+        </label>
       </nav>
 
       <div class="stick-panel">
@@ -283,6 +350,9 @@
         <output id="right-values" class="values">P 0.00 · R 0.00</output>
       </div>
     </section>
+
+    <p id="gesture-hint" class="gesture-hint">雙桿往內下壓並保持 0.8 秒可解鎖</p>
+    <div id="feedback-toast" class="feedback-toast" role="alert"></div>
 
     <div id="missing-peer" class="missing-peer">
       <p>網址中缺少 Peer ID。<br>請回到電腦端首頁，重新掃描 QR Code 開啟遙控器。</p>
@@ -302,7 +372,18 @@
         us: document.querySelector('#mode-us'),
         jp: document.querySelector('#mode-jp')
       };
+      const sensitivityInput = document.querySelector('#sensitivity');
+      const sensitivityValue = document.querySelector('#sensitivity-value');
+      const physicalSticks = {
+        left: { x: 0, y: 0 },
+        right: { x: 0, y: 0 }
+      };
       let stickMode = localStorage.getItem('drone-stick-mode') === 'jp' ? 'jp' : 'us';
+      let sensitivity = Number(localStorage.getItem('drone-sensitivity')) || 65;
+      let remoteArmed = false;
+      let gestureStartedAt = 0;
+      let gestureCooldownUntil = 0;
+      let lastCrashEvent = 0;
       let connection = null;
       let lastSent = '';
 
@@ -313,6 +394,23 @@
 
       function clamp(value) {
         return Math.max(-1, Math.min(1, Number(value) || 0));
+      }
+
+      function shapeAxis(value) {
+        const deadzone = .11;
+        const magnitude = Math.abs(clamp(value));
+        if (magnitude <= deadzone) return 0;
+        const normalized = (magnitude - deadzone) / (1 - deadzone);
+        return Math.sign(value) * Math.pow(normalized, 1.45) * (sensitivity / 100);
+      }
+
+      function shapePair(x, y) {
+        let shapedX = shapeAxis(x);
+        let shapedY = shapeAxis(y);
+        // 初學者軸向輔助：主方向推得明確時，濾除小幅度的斜推誤差。
+        if (Math.abs(y) > .28 && Math.abs(x) < .22) shapedX = 0;
+        if (Math.abs(x) > .28 && Math.abs(y) < .22) shapedY = 0;
+        return { x: shapedX, y: shapedY };
       }
 
       function sendControls(force = false) {
@@ -328,6 +426,35 @@
         if (!connection?.open) return;
         connection.send({ type: 'command', command });
         if (navigator.vibrate) navigator.vibrate(command === 'emergency' ? [80, 40, 120] : 35);
+      }
+
+      function showFeedback(message) {
+        const toast = document.querySelector('#feedback-toast');
+        toast.textContent = message;
+        toast.classList.add('visible');
+        clearTimeout(showFeedback.timer);
+        showFeedback.timer = setTimeout(() => toast.classList.remove('visible'), 2600);
+      }
+
+      function updateArmGesture() {
+        const now = performance.now();
+        const inwardDown = physicalSticks.left.x > .62 && physicalSticks.left.y < -.62
+          && physicalSticks.right.x < -.62 && physicalSticks.right.y < -.62;
+        const armButton = document.querySelector('#arm-button');
+        if (!remoteArmed && inwardDown && now > gestureCooldownUntil) {
+          if (!gestureStartedAt) gestureStartedAt = now;
+          const progress = Math.min(1, (now - gestureStartedAt) / 800);
+          armButton.textContent = `內八解鎖 ${Math.round(progress * 100)}%`;
+          if (progress >= 1) {
+            sendCommand('arm');
+            showFeedback('馬達已解鎖');
+            gestureStartedAt = 0;
+            gestureCooldownUntil = now + 1500;
+          }
+        } else {
+          gestureStartedAt = 0;
+          armButton.textContent = remoteArmed ? '鎖定馬達' : '解鎖馬達';
+        }
       }
 
       function setStickMode(mode) {
@@ -375,16 +502,31 @@
       const leftOutput = document.querySelector('#left-values');
       const rightOutput = document.querySelector('#right-values');
 
+      sensitivity = Math.max(35, Math.min(100, sensitivity));
+      sensitivityInput.value = String(sensitivity);
+      sensitivityValue.value = `${sensitivity}%`;
+      sensitivityInput.addEventListener('input', () => {
+        sensitivity = Number(sensitivityInput.value);
+        sensitivityValue.value = `${sensitivity}%`;
+        localStorage.setItem('drone-sensitivity', String(sensitivity));
+      });
+
+      setInterval(updateArmGesture, 50);
+
       requestAnimationFrame(() => {
         makeStick(
           document.querySelector('#left-stick'),
           (x, y) => {
-            controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = y;
-            controlState.yaw = x;
-            leftOutput.value = `${stickMode === 'jp' ? 'P' : 'T'} ${y.toFixed(2)} · Y ${x.toFixed(2)}`;
+            physicalSticks.left = { x, y };
+            const shaped = shapePair(x, y);
+            controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = shaped.y;
+            controlState.yaw = shaped.x;
+            leftOutput.value = `${stickMode === 'jp' ? 'P' : 'T'} ${shaped.y.toFixed(2)} · Y ${shaped.x.toFixed(2)}`;
+            updateArmGesture();
             sendControls();
           },
           () => {
+            physicalSticks.left = { x: 0, y: 0 };
             controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = 0;
             controlState.yaw = 0;
             leftOutput.value = `${stickMode === 'jp' ? 'P' : 'T'} 0.00 · Y 0.00`;
@@ -395,12 +537,16 @@
         makeStick(
           document.querySelector('#right-stick'),
           (x, y) => {
-            controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = y;
-            controlState.roll = x;
-            rightOutput.value = `${stickMode === 'jp' ? 'T' : 'P'} ${y.toFixed(2)} · R ${x.toFixed(2)}`;
+            physicalSticks.right = { x, y };
+            const shaped = shapePair(x, y);
+            controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = shaped.y;
+            controlState.roll = shaped.x;
+            rightOutput.value = `${stickMode === 'jp' ? 'T' : 'P'} ${shaped.y.toFixed(2)} · R ${shaped.x.toFixed(2)}`;
+            updateArmGesture();
             sendControls();
           },
           () => {
+            physicalSticks.right = { x: 0, y: 0 };
             controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = 0;
             controlState.roll = 0;
             rightOutput.value = `${stickMode === 'jp' ? 'T' : 'P'} 0.00 · R 0.00`;
@@ -439,7 +585,13 @@
           document.querySelector('#heading').textContent = `${Math.round(Number(data.heading))}°`;
           document.querySelector('#battery').textContent = `${Math.round(Number(data.battery))}%`;
           const armButton = document.querySelector('#arm-button');
+          remoteArmed = Boolean(data.armed);
           armButton.textContent = data.armed ? '鎖定馬達' : '解鎖馬達';
+          if (data.crashEvent && data.crashEvent !== lastCrashEvent) {
+            lastCrashEvent = data.crashEvent;
+            showFeedback(`⚠ 墜機：${data.crashReason || '發生碰撞'}`);
+            if (navigator.vibrate) navigator.vibrate([180, 80, 180, 80, 260]);
+          }
         });
         connection.on('close', () => setStatus('連線已中斷', 'error'));
         connection.on('error', () => setStatus('連線錯誤', 'error'));

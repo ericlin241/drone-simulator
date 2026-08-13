@@ -4,6 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Web 無人機模擬器</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="canonical" href="https://ericlin241.github.io/drone-simulator/">
+  <meta name="description" content="以手機雙搖桿操控的瀏覽器 3D 無人機模擬器，支援美國手、日本手、內八解鎖、考場訓練與碰撞回饋。">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_TW">
+  <meta property="og:site_name" content="Web Flight Lab">
+  <meta property="og:title" content="Web 無人機模擬器｜手機即時飛行訓練">
+  <meta property="og:description" content="掃描 QR Code，用手機遙控器練習美國手、日本手、內八解鎖與標準 8 字考場飛行。">
+  <meta property="og:url" content="https://ericlin241.github.io/drone-simulator/">
+  <meta property="og:image" content="https://ericlin241.github.io/drone-simulator/og-cover.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="無人機在標準考場進行 8 字飛行訓練">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Web 無人機模擬器｜手機即時飛行訓練">
+  <meta name="twitter:description" content="用手機雙搖桿練習無人機飛行、內八解鎖與考場操作。">
+  <meta name="twitter:image" content="https://ericlin241.github.io/drone-simulator/og-cover.png">
   <style>
     :root {
       color-scheme: dark;
@@ -149,11 +167,52 @@
     .flight-card strong { color: #e8f8ff; font: 700 .88rem ui-monospace, monospace; }
     #flight-state { color: #ffca62; }
 
+    .course-badge {
+      position: fixed;
+      z-index: 2;
+      left: 20px;
+      bottom: 20px;
+      padding: 9px 13px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 12px;
+      background: rgba(5,15,28,.7);
+      color: #b8cadd;
+      font-size: .68rem;
+      backdrop-filter: blur(12px);
+    }
+    .course-badge strong { display: block; color: #6edcff; font-size: .76rem; }
+
+    .crash-overlay {
+      position: fixed;
+      z-index: 10;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle, rgba(255,59,79,.08), rgba(65,0,9,.44));
+      opacity: 0;
+      transition: opacity .18s;
+      pointer-events: none;
+    }
+    .crash-overlay.visible { opacity: 1; animation: crash-flash .42s ease-out; }
+    .crash-message {
+      padding: 20px 28px;
+      border: 1px solid rgba(255,97,117,.55);
+      border-radius: 18px;
+      background: rgba(66,6,16,.88);
+      box-shadow: 0 20px 70px rgba(0,0,0,.52);
+      text-align: center;
+      transform: translateY(-4vh);
+    }
+    .crash-message strong { display: block; color: #ff8c9c; font-size: 1.45rem; }
+    .crash-message span { color: #ffc7cf; font-size: .8rem; }
+    @keyframes crash-flash { 0% { background-color: rgba(255,255,255,.8); } 100% { background-color: transparent; } }
+
     @media (max-width: 620px) {
       .pairing { grid-template-columns: 104px 1fr; }
       #qrcode { width: 104px; height: 104px; }
       .telemetry { right: 10px; bottom: 10px; left: 10px; }
       .flight-card { display: none; }
+      .course-badge { display: none; }
     }
   </style>
 </head>
@@ -188,6 +247,11 @@
     <div class="meter"><span>Roll</span><strong id="t-roll">0.00</strong></div>
   </section>
 
+  <aside class="course-badge"><strong>CAA 基本級訓練場</strong>15 m × 15 m · 6 m × 5 m 標點配置</aside>
+  <div id="crash-overlay" class="crash-overlay" aria-live="assertive">
+    <div class="crash-message"><strong>FLIGHT TERMINATED</strong><span id="crash-reason">發生碰撞，請重設位置</span></div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
@@ -213,6 +277,10 @@
       let batteryLevel = 100;
       let cameraMode = 0;
       let lastTelemetryAt = 0;
+      let crashed = false;
+      let crashEventId = 0;
+      let crashReason = '';
+      const crashSpin = new THREE.Vector3();
 
       function setStatus(message, type = '') {
         statusText.textContent = message;
@@ -230,21 +298,47 @@
       }
 
       function resetDrone() {
-        drone.position.set(0, 1.4, 0);
+        drone.position.set(0, REST_Y, 0);
+        drone.rotation.set(0, 0, 0);
         velocity.set(0, 0, 0);
         yawAngle = 0;
         autoFlight = null;
+        armed = false;
+        crashed = false;
+        crashReason = '';
+        crashSpin.set(0, 0, 0);
+        document.querySelector('#crash-overlay').classList.remove('visible');
+        setFlightState('未解鎖', '#ffca62');
+      }
+
+      function triggerCrash(reason) {
+        if (crashed) return;
+        crashed = true;
+        armed = false;
+        autoFlight = null;
+        crashReason = reason;
+        crashEventId = Date.now();
+        velocity.y = Math.min(velocity.y, -1.8);
+        velocity.x *= .42;
+        velocity.z *= .42;
+        crashSpin.set(2.8 + Math.random() * 2, 1.2, (Math.random() - .5) * 6);
+        setFlightState('墜機', '#ff6379');
+        document.querySelector('#crash-reason').textContent = `${reason}，請按「重設位置」`;
+        document.querySelector('#crash-overlay').classList.add('visible');
+        spawnCrashDebris();
       }
 
       function handleCommand(command) {
         switch (command) {
           case 'arm':
+            if (crashed) return;
             armed = !armed;
             autoFlight = null;
             if (!armed) velocity.set(0, 0, 0);
             setFlightState(armed ? '已解鎖' : '未解鎖', armed ? '#55e7aa' : '#ffca62');
             break;
           case 'takeoff':
+            if (crashed) return;
             armed = true;
             autoFlight = 'takeoff';
             setFlightState('自動起飛', '#65dcff');
@@ -351,63 +445,189 @@
       scene.add(sun);
 
       const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(180, 180),
-        new THREE.MeshStandardMaterial({ color: 0x668553, roughness: 1 })
+        new THREE.PlaneGeometry(100, 100),
+        new THREE.MeshStandardMaterial({ color: 0x5f7e4b, roughness: .98 })
       );
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
       scene.add(ground);
 
-      const grid = new THREE.GridHelper(180, 90, 0x385943, 0x58784f);
-      grid.position.y = 0.012;
-      scene.add(grid);
+      const colliders = [];
+      const crashDebris = [];
+      const white = 0xf4f2df;
+      const courseYellow = 0xffdc34;
 
-      const pad = new THREE.Mesh(
-        new THREE.CylinderGeometry(3.4, 3.6, .12, 64),
-        new THREE.MeshStandardMaterial({ color: 0x26343e, roughness: .85 })
-      );
-      pad.position.y = .06;
-      pad.receiveShadow = true;
-      scene.add(pad);
-
-      const padMark = new THREE.Mesh(
-        new THREE.RingGeometry(2.25, 2.48, 64),
-        new THREE.MeshBasicMaterial({ color: 0x65dcff, side: THREE.DoubleSide })
-      );
-      padMark.rotation.x = -Math.PI / 2;
-      padMark.position.y = .125;
-      scene.add(padMark);
-
-      const sceneryMaterial = new THREE.MeshStandardMaterial({ color: 0x415868, roughness: .78 });
-      const treeTopMaterial = new THREE.MeshStandardMaterial({ color: 0x285c43, roughness: 1 });
-      const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x5d4938, roughness: 1 });
-      for (let index = 0; index < 34; index += 1) {
-        const angle = index * 2.399;
-        const radius = 12 + (index % 7) * 4.2;
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
-        if (index % 5 === 0) {
-          const height = 2.5 + (index % 4) * 1.4;
-          const building = new THREE.Mesh(new THREE.BoxGeometry(2.8, height, 2.8), sceneryMaterial);
-          building.position.set(x, height / 2, z);
-          building.castShadow = true;
-          building.receiveShadow = true;
-          scene.add(building);
-        } else {
-          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.13, .18, 1.1, 8), trunkMaterial);
-          trunk.position.set(x, .55, z);
-          trunk.castShadow = true;
-          scene.add(trunk);
-          const crown = new THREE.Mesh(new THREE.ConeGeometry(.85, 2.25, 10), treeTopMaterial);
-          crown.position.set(x, 1.85, z);
-          crown.castShadow = true;
-          scene.add(crown);
-        }
+      function groundStrip(x, z, width, depth, color, y = .018) {
+        const strip = new THREE.Mesh(
+          new THREE.PlaneGeometry(width, depth),
+          new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
+        );
+        strip.rotation.x = -Math.PI / 2;
+        strip.position.set(x, y, z);
+        scene.add(strip);
+        return strip;
       }
 
+      function rectangleLines(cx, cz, width, depth, color, thickness = .075, y = .02) {
+        groundStrip(cx, cz - depth / 2, width, thickness, color, y);
+        groundStrip(cx, cz + depth / 2, width, thickness, color, y);
+        groundStrip(cx - width / 2, cz, thickness, depth, color, y);
+        groundStrip(cx + width / 2, cz, thickness, depth, color, y);
+      }
+
+      function makeTextLabel(text, x, z, color = '#ffe23d') {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+        context.font = '800 76px system-ui';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillStyle = 'rgba(4,12,18,.72)';
+        context.fillText(text, 132, 68);
+        context.fillStyle = color;
+        context.fillText(text, 128, 64);
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false }));
+        sprite.position.set(x, .55, z);
+        sprite.scale.set(1.35, .68, 1);
+        scene.add(sprite);
+      }
+
+      function createCone(x, z, label) {
+        const group = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(.24, .29, .07, 20), new THREE.MeshStandardMaterial({ color: 0x202833, roughness: .75 }));
+        base.position.y = .035;
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(.19, .48, 24), new THREE.MeshStandardMaterial({ color: 0xffa51f, roughness: .6 }));
+        cone.position.y = .31;
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(.13, .16, .08, 24), new THREE.MeshStandardMaterial({ color: 0xf7f5e8, roughness: .55 }));
+        band.position.y = .25;
+        group.add(base, cone, band);
+        group.position.set(x, 0, z);
+        group.traverse(object => { if (object.isMesh) object.castShadow = true; });
+        scene.add(group);
+        colliders.push({ type: 'cylinder', x, z, radius: .22, height: .58, name: `${label} 角錐` });
+        makeTextLabel(label, x + (x < 0 ? -.58 : .58), z, '#ffe23d');
+      }
+
+      // 民航局 AC 107-005D：基本級未達 2 kg 多旋翼場地主要尺寸，1 世界單位 = 1 公尺。
+      groundStrip(0, 0, 15, 15, 0x72965a, .01);
+      rectangleLines(0, 0, 15, 15, white, .11, .028);
+      groundStrip(0, 0, .07, 15, white, .03);
+      groundStrip(0, 0, 15, .07, white, .03);
+      rectangleLines(0, -2.5, 13.8, 7, courseYellow, .045, .034);
+      rectangleLines(0, -2.5, 9, 3.6, courseYellow, .045, .034);
+
+      const pad = new THREE.Mesh(
+        new THREE.CylinderGeometry(1, 1, .045, 64),
+        new THREE.MeshStandardMaterial({ color: 0x3d454b, roughness: .78 })
+      );
+      pad.position.y = .0225;
+      pad.receiveShadow = true;
+      scene.add(pad);
+      const padMark = new THREE.Mesh(new THREE.RingGeometry(.82, .9, 64), new THREE.MeshBasicMaterial({ color: white, side: THREE.DoubleSide }));
+      padMark.rotation.x = -Math.PI / 2;
+      padMark.position.y = .047;
+      scene.add(padMark);
+      groundStrip(-.26, 0, .1, .62, white, .051);
+      groundStrip(.26, 0, .1, .62, white, .051);
+      groundStrip(0, 0, .58, .1, white, .052);
+
+      createCone(-6, 0, 'P1');
+      createCone(-6, -5, 'P2');
+      createCone(6, -5, 'P3');
+      createCone(6, 0, 'P4');
+
+      // 初學者用淡色 8 字參考線，兩圓交會點位於四標點中央。
+      const figureEightPoints = [];
+      for (let index = 0; index <= 160; index += 1) {
+        const angle = index / 160 * Math.PI * 2;
+        figureEightPoints.push(new THREE.Vector3(6 * Math.sin(angle), .052, -2.5 - 2.5 * Math.sin(angle * 2)));
+      }
+      const figureEight = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(figureEightPoints),
+        new THREE.LineDashedMaterial({ color: 0xbdefff, transparent: true, opacity: .5, dashSize: .28, gapSize: .22 })
+      );
+      figureEight.computeLineDistances();
+      scene.add(figureEight);
+
+      // 操作人與監評區（場圖主要距離：起降點後方 2.25 m）。
+      rectangleLines(0, 2.25, 1, 1.2, 0xece7d6, .06, .032);
+      rectangleLines(0, 3.4, 4, .6, 0xece7d6, .06, .032);
+
+      function createTree(x, z, height = 4.6) {
+        const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: .95 });
+        const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x285b39, roughness: .95 });
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.22, .34, height * .48, 10), trunkMaterial);
+        trunk.position.set(x, height * .24, z);
+        trunk.castShadow = true;
+        scene.add(trunk);
+        const crown = new THREE.Group();
+        [[0,0,0],[-.48,-.1,.1],[.45,.12,.05],[0,.55,0]].forEach(([ox, oy, oz], index) => {
+          const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(height * (index === 3 ? .23 : .27), 1), leafMaterial);
+          leaves.position.set(x + ox, height * .6 + oy, z + oz);
+          leaves.castShadow = true;
+          crown.add(leaves);
+        });
+        scene.add(crown);
+        colliders.push({ type: 'cylinder', x, z, radius: height * .3, height, name: '樹木' });
+      }
+
+      function createHangar(x, z) {
+        const walls = new THREE.Mesh(new THREE.BoxGeometry(7, 3.8, 5), new THREE.MeshStandardMaterial({ color: 0x87939b, metalness: .3, roughness: .65 }));
+        walls.position.set(x, 1.9, z);
+        walls.castShadow = true;
+        walls.receiveShadow = true;
+        scene.add(walls);
+        const door = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 2.8), new THREE.MeshStandardMaterial({ color: 0x202a30, roughness: .9 }));
+        door.position.set(x, 1.55, z + 2.505);
+        scene.add(door);
+        const roof = new THREE.Mesh(new THREE.CylinderGeometry(3.65, 3.65, 5.2, 32, 1, false, 0, Math.PI), new THREE.MeshStandardMaterial({ color: 0x64727b, metalness: .55, roughness: .5, side: THREE.DoubleSide }));
+        roof.rotation.z = Math.PI / 2;
+        roof.rotation.y = Math.PI / 2;
+        roof.position.set(x, 3.82, z);
+        roof.castShadow = true;
+        scene.add(roof);
+        colliders.push({ type: 'box', x, z, halfX: 3.5, halfZ: 2.5, height: 5.3, name: '機棚' });
+      }
+
+      function createTrainingGate(x, z) {
+        const material = new THREE.MeshStandardMaterial({ color: 0x36bfe8, metalness: .45, roughness: .38 });
+        [-1.25, 1.25].forEach(offset => {
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(.09, .12, 3.2, 14), material);
+          pole.position.set(x + offset, 1.6, z);
+          pole.castShadow = true;
+          scene.add(pole);
+          colliders.push({ type: 'cylinder', x: x + offset, z, radius: .12, height: 3.2, name: '訓練門柱' });
+        });
+        const top = new THREE.Mesh(new THREE.BoxGeometry(2.65, .15, .15), material);
+        top.position.set(x, 3.15, z);
+        top.castShadow = true;
+        scene.add(top);
+        colliders.push({ type: 'box', x, z, halfX: 1.4, halfZ: .12, minY: 3.02, height: 3.3, name: '訓練門框' });
+      }
+
+      createHangar(14, -8);
+      createTrainingGate(11, 2.5);
+      [[-12,-10,5.2],[-14,-2,4.5],[-12,8,5.5],[10,-14,5],[17,5,5.8],[8,12,4.8]].forEach(args => createTree(...args));
+
+      // 外圍安全護欄，保留 15 m 官方場地內部淨空。
+      const barrierMaterial = new THREE.MeshStandardMaterial({ color: 0xcbd3d6, metalness: .7, roughness: .38 });
+      [-9, 9].forEach(x => {
+        for (let z = -8; z <= 8; z += 2) {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(.07, .72, 1.8), barrierMaterial);
+          rail.position.set(x, .42, z);
+          rail.castShadow = true;
+          scene.add(rail);
+        }
+        colliders.push({ type: 'box', x, z: 0, halfX: .08, halfZ: 9, height: .85, name: '安全護欄' });
+      });
+
+      const REST_Y = .16;
+      const DRONE_RADIUS = .55;
       const drone = new THREE.Group();
       drone.rotation.order = 'YXZ';
-      drone.position.set(0, 1.4, 0);
+      drone.position.set(0, REST_Y, 0);
+      drone.scale.setScalar(.35);
       scene.add(drone);
 
       const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x172331, metalness: .55, roughness: .3 });
@@ -444,20 +664,64 @@
         rotors.push(rotor);
       });
 
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(2.7, 2.78, 72),
-        new THREE.MeshBasicMaterial({ color: 0xdaf6ff, transparent: true, opacity: .5, side: THREE.DoubleSide })
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = .025;
-      scene.add(ring);
-
       const clock = new THREE.Clock();
       const velocity = new THREE.Vector3();
       const forward = new THREE.Vector3();
       const right = new THREE.Vector3();
       const cameraTarget = new THREE.Vector3();
       let yawAngle = 0;
+
+      function spawnCrashDebris() {
+        const material = new THREE.MeshStandardMaterial({ color: 0xff8f32, emissive: 0x5c1700, roughness: .7 });
+        for (let index = 0; index < 18; index += 1) {
+          const piece = new THREE.Mesh(new THREE.BoxGeometry(.05, .05, .05), material);
+          piece.position.copy(drone.position);
+          piece.userData.velocity = new THREE.Vector3(
+            (Math.random() - .5) * 4,
+            1.5 + Math.random() * 3,
+            (Math.random() - .5) * 4
+          );
+          piece.userData.life = .9 + Math.random() * .8;
+          scene.add(piece);
+          crashDebris.push(piece);
+        }
+      }
+
+      function updateCrashDebris(dt) {
+        for (let index = crashDebris.length - 1; index >= 0; index -= 1) {
+          const piece = crashDebris[index];
+          piece.userData.life -= dt;
+          piece.userData.velocity.y -= 7 * dt;
+          piece.position.addScaledVector(piece.userData.velocity, dt);
+          piece.rotation.x += 6 * dt;
+          piece.rotation.z += 5 * dt;
+          piece.scale.setScalar(Math.max(0, piece.userData.life));
+          if (piece.userData.life <= 0) {
+            scene.remove(piece);
+            crashDebris.splice(index, 1);
+          }
+        }
+      }
+
+      function findCollision() {
+        const y = drone.position.y;
+        for (const collider of colliders) {
+          const minY = collider.minY || 0;
+          if (y + DRONE_RADIUS < minY || y - DRONE_RADIUS > collider.height) continue;
+          if (collider.type === 'cylinder') {
+            const dx = drone.position.x - collider.x;
+            const dz = drone.position.z - collider.z;
+            if (dx * dx + dz * dz < Math.pow(DRONE_RADIUS + collider.radius, 2)) return collider.name;
+          } else {
+            const nearestX = Math.max(collider.x - collider.halfX, Math.min(drone.position.x, collider.x + collider.halfX));
+            const nearestZ = Math.max(collider.z - collider.halfZ, Math.min(drone.position.z, collider.z + collider.halfZ));
+            const dx = drone.position.x - nearestX;
+            const dz = drone.position.z - nearestZ;
+            if (dx * dx + dz * dz < DRONE_RADIUS * DRONE_RADIUS) return collider.name;
+          }
+        }
+        return '';
+      }
 
       const cameraLabels = ['追蹤', '環繞', '俯視'];
       document.querySelector('#camera-button').addEventListener('click', event => {
@@ -470,28 +734,30 @@
         requestAnimationFrame(animate);
         const dt = Math.min(clock.getDelta(), .05);
 
-        if (armed && batteryLevel > 0) {
+        updateCrashDebris(dt);
+
+        if (armed && !crashed && batteryLevel > 0) {
           batteryLevel = Math.max(0, batteryLevel - dt * (.018 + Math.abs(controls.throttle) * .022));
         }
-        if (batteryLevel <= 0) {
+        if (!crashed && batteryLevel <= 0) {
           armed = false;
           autoFlight = 'land';
           setFlightState('低電量降落', '#ff6379');
         }
 
-        let verticalControl = armed ? controls.throttle : 0;
+        let verticalControl = armed && !crashed ? controls.throttle : 0;
         if (autoFlight === 'takeoff') {
-          verticalControl = drone.position.y < 3.42 ? .58 : 0;
-          if (drone.position.y >= 3.42) {
-            drone.position.y = 3.42;
+          verticalControl = drone.position.y < REST_Y + 3 ? .52 : 0;
+          if (drone.position.y >= REST_Y + 3) {
+            drone.position.y = REST_Y + 3;
             velocity.y = 0;
             autoFlight = null;
             setFlightState('懸停', '#55e7aa');
           }
         } else if (autoFlight === 'land') {
-          verticalControl = drone.position.y > .46 ? -.4 : 0;
-          if (drone.position.y <= .46) {
-            drone.position.y = .42;
+          verticalControl = drone.position.y > REST_Y + .04 ? -.32 : 0;
+          if (drone.position.y <= REST_Y + .04) {
+            drone.position.y = REST_Y;
             velocity.y = 0;
             autoFlight = null;
             armed = false;
@@ -499,28 +765,63 @@
           }
         }
 
-        const activeYaw = armed ? controls.yaw : 0;
-        const activePitch = armed ? controls.pitch : 0;
-        const activeRoll = armed ? controls.roll : 0;
-        yawAngle += activeYaw * 1.65 * dt;
-        const targetPitch = activePitch * .32;
+        const activeYaw = armed && !crashed ? controls.yaw : 0;
+        const activePitch = armed && !crashed ? controls.pitch : 0;
+        const activeRoll = armed && !crashed ? controls.roll : 0;
+        yawAngle += activeYaw * 1.35 * dt;
+        // 機頭朝本地 -Z；前進時使用負 X 軸旋轉，讓機頭下沉、機尾抬高。
+        const targetPitch = -activePitch * .3;
         const targetRoll = -activeRoll * .36;
-        drone.rotation.y = yawAngle;
-        drone.rotation.x = THREE.MathUtils.lerp(drone.rotation.x, targetPitch, 1 - Math.exp(-7 * dt));
-        drone.rotation.z = THREE.MathUtils.lerp(drone.rotation.z, targetRoll, 1 - Math.exp(-7 * dt));
+        if (crashed) {
+          drone.rotation.x += crashSpin.x * dt;
+          drone.rotation.y += crashSpin.y * dt;
+          drone.rotation.z += crashSpin.z * dt;
+          crashSpin.multiplyScalar(Math.exp(-1.2 * dt));
+        } else {
+          drone.rotation.y = yawAngle;
+          drone.rotation.x = THREE.MathUtils.lerp(drone.rotation.x, targetPitch, 1 - Math.exp(-6 * dt));
+          drone.rotation.z = THREE.MathUtils.lerp(drone.rotation.z, targetRoll, 1 - Math.exp(-6 * dt));
+        }
 
         forward.set(-Math.sin(yawAngle), 0, -Math.cos(yawAngle));
         right.set(Math.cos(yawAngle), 0, -Math.sin(yawAngle));
-        velocity.addScaledVector(forward, activePitch * 7 * dt);
-        velocity.addScaledVector(right, activeRoll * 7 * dt);
-        velocity.y += verticalControl * 8 * dt;
-        velocity.multiplyScalar(Math.exp(-2.15 * dt));
+        if (!crashed) {
+          velocity.addScaledVector(forward, activePitch * 5.4 * dt);
+          velocity.addScaledVector(right, activeRoll * 5.4 * dt);
+          velocity.y += verticalControl * 6.2 * dt;
+          velocity.multiplyScalar(Math.exp(-2.35 * dt));
+          const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+          if (horizontalSpeed > 4.8) {
+            const scale = 4.8 / horizontalSpeed;
+            velocity.x *= scale;
+            velocity.z *= scale;
+          }
+        } else {
+          velocity.y -= 7.2 * dt;
+          velocity.x *= Math.exp(-.65 * dt);
+          velocity.z *= Math.exp(-.65 * dt);
+        }
         drone.position.addScaledVector(velocity, dt);
-        drone.position.y = Math.max(.42, Math.min(22, drone.position.y));
-        if (drone.position.y <= .421 && velocity.y < 0) velocity.y = 0;
+        drone.position.y = Math.min(15 + REST_Y, drone.position.y);
+
+        if (!crashed) {
+          const collisionName = findCollision();
+          if (collisionName) triggerCrash(`撞上${collisionName}`);
+          if (drone.position.y <= REST_Y) {
+            if (velocity.y < -2.5 || Math.hypot(velocity.x, velocity.z) > 2.8) {
+              triggerCrash('重落地');
+            } else {
+              drone.position.y = REST_Y;
+              if (velocity.y < 0) velocity.y = 0;
+            }
+          }
+        } else if (drone.position.y <= REST_Y * .72) {
+          drone.position.y = REST_Y * .72;
+          velocity.set(0, 0, 0);
+        }
 
         rotors.forEach((rotor, index) => {
-          const rotorSpeed = armed ? 22 + Math.abs(verticalControl) * 30 : 2;
+          const rotorSpeed = armed && !crashed ? 22 + Math.abs(verticalControl) * 30 : 1;
           rotor.rotation.y += (index % 2 ? -1 : 1) * rotorSpeed * dt;
         });
 
@@ -535,13 +836,21 @@
           cameraOffset = new THREE.Vector3(10, 6.5, 13).applyAxisAngle(new THREE.Vector3(0, 1, 0), yawAngle * .18);
         }
         const desiredCamera = cameraOffset.add(drone.position);
+        if (crashed && Date.now() - crashEventId < 900) {
+          desiredCamera.add(new THREE.Vector3(
+            (Math.random() - .5) * .22,
+            (Math.random() - .5) * .16,
+            (Math.random() - .5) * .22
+          ));
+        }
         camera.position.lerp(desiredCamera, 1 - Math.exp(-2.4 * dt));
         camera.lookAt(cameraTarget);
 
-        const altitude = Math.max(0, drone.position.y - .42);
+        const altitude = Math.max(0, drone.position.y - REST_Y);
         altitudeElement.textContent = `${altitude.toFixed(1)} m`;
         batteryElement.textContent = `${Math.round(batteryLevel)}%`;
         batteryElement.style.color = batteryLevel < 20 ? '#ff6379' : '#e8f8ff';
+        flightStateElement.dataset.pitchAngle = drone.rotation.x.toFixed(4);
         if (activeConnection?.open && elapsed - lastTelemetryAt > .15) {
           activeConnection.send({
             type: 'telemetry',
@@ -550,7 +859,9 @@
             heading: (THREE.MathUtils.radToDeg(yawAngle) % 360 + 360) % 360,
             battery: batteryLevel,
             armed,
-            flightState: flightStateElement.textContent
+            flightState: flightStateElement.textContent,
+            crashEvent: crashEventId,
+            crashReason
           });
           lastTelemetryAt = elapsed;
         }

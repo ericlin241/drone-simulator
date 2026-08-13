@@ -9,8 +9,13 @@
 - QR Code 快速配對，無須輸入連線代碼
 - 美國手 Mode 2／日本手 Mode 1 一鍵切換，並自動記住設定
 - 自動起飛、自動降落、馬達鎖定、位置重設與緊急停止
+- 雙搖桿「內八」保持 0.8 秒解鎖馬達
+- 35%～100% 靈敏度、11% 中心死區、Expo 曲線與軸向誤觸抑制
 - 高度、速度、航向、電量與飛行狀態顯示
+- 1:1 民航局基本級 15 m × 15 m 多旋翼考場與 8 字參考航線
+- 樹木、機棚、訓練門、護欄與角錐碰撞；撞擊後墜機並回傳手機震動警告
 - 手機直向時以 CSS 自動旋轉，維持橫向遙控器配置
+- 無人機分頁圖示與社群分享大圖、標題及說明
 - 無框架、無建置流程，可直接發布至 GitHub Pages
 
 ## 本機預覽
@@ -43,10 +48,12 @@ python3 -m http.server 8000
 - `index.html`：電腦端 3D 模擬器、QR Code 與遙測 HUD
 - `controller.html`：手機雙搖桿遙控器
 - `GUIDE.md`：完整操作、模式說明與疑難排解
+- `favicon.svg`：瀏覽器分頁無人機圖示
+- `og-cover.png`：社群聊天室連結預覽圖
 
 ## 架構摘要
 
-GitHub Pages 只負責提供 HTML、CSS 與 JavaScript 靜態檔案。電腦與手機載入頁面後，由 PeerJS 使用公用 signaling server 協助建立 WebRTC DataChannel；連線完成後，控制與遙測資料在兩個瀏覽器之間即時交換。QR Code 只是把帶有電腦 Peer ID 的手機控制器網址快速交給手機。更完整的流程說明請見 [GUIDE.md](GUIDE.md#8-運作原理為什麼只有-html-也能連線)。
+GitHub Pages 只負責提供 HTML、CSS 與 JavaScript 靜態檔案。電腦與手機載入頁面後，由 PeerJS 使用公用 signaling server 協助建立 WebRTC DataChannel；連線完成後，控制與遙測資料在兩個瀏覽器之間即時交換。QR Code 只是把帶有電腦 Peer ID 的手機控制器網址快速交給手機。更完整的流程說明請見 [GUIDE.md](GUIDE.md#9-運作原理為什麼只有-html-也能連線)。
 
 ## 技術限制
 
