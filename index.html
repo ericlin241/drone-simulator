@@ -39,7 +39,8 @@
       overflow: hidden;
     }
 
-    canvas { display: block; }
+    canvas { display: block; cursor: grab; }
+    canvas.dragging { cursor: grabbing; }
 
     .hud {
       position: fixed;
@@ -247,7 +248,7 @@
     <div class="meter"><span>Roll</span><strong id="t-roll">0.00</strong></div>
   </section>
 
-  <aside class="course-badge"><strong>CAA 基本級訓練場</strong>15 m × 15 m · 6 m × 5 m 標點配置</aside>
+  <aside class="course-badge"><strong>水平 8 字訓練場 · P1～P7</strong>15 m × 15 m · 左鍵平移 · 右鍵環繞 · 滾輪縮放</aside>
   <div id="crash-overlay" class="crash-overlay" aria-live="assertive">
     <div class="crash-message"><strong>FLIGHT TERMINATED</strong><span id="crash-reason">發生碰撞，請重設位置</span></div>
   </div>
@@ -297,8 +298,10 @@
         flightStateElement.style.color = color;
       }
 
+      const TAKEOFF_Z = 2.5;
+
       function resetDrone() {
-        drone.position.set(0, REST_Y, 0);
+        drone.position.set(0, REST_Y, TAKEOFF_Z);
         drone.rotation.set(0, 0, 0);
         velocity.set(0, 0, 0);
         yawAngle = 0;
@@ -455,7 +458,6 @@
       const colliders = [];
       const crashDebris = [];
       const white = 0xf4f2df;
-      const courseYellow = 0xffdc34;
 
       function groundStrip(x, z, width, depth, color, y = .018) {
         const strip = new THREE.Mesh(
@@ -505,54 +507,104 @@
         group.position.set(x, 0, z);
         group.traverse(object => { if (object.isMesh) object.castShadow = true; });
         scene.add(group);
-        colliders.push({ type: 'cylinder', x, z, radius: .22, height: .58, name: `${label} 角錐` });
-        makeTextLabel(label, x + (x < 0 ? -.58 : .58), z, '#ffe23d');
+        colliders.push({ type: 'cylinder', x, z, radius: .22, height: .58, name: label ? `${label} 角錐` : '場地角錐' });
+        if (label) makeTextLabel(label, x + (x < 0 ? -.58 : .58), z, '#ffe23d');
       }
 
-      // 民航局 AC 107-005D：基本級未達 2 kg 多旋翼場地主要尺寸，1 世界單位 = 1 公尺。
-      groundStrip(0, 0, 15, 15, 0x72965a, .01);
+      function createGroundCircle(cx, cz, radius, color, thickness = .025, y = .045) {
+        const points = [];
+        for (let index = 0; index < 96; index += 1) {
+          const angle = index / 96 * Math.PI * 2;
+          points.push(new THREE.Vector3(cx + Math.cos(angle) * radius, y, cz + Math.sin(angle) * radius));
+        }
+        const curve = new THREE.CatmullRomCurve3(points, true, 'centripetal');
+        const circle = new THREE.Mesh(
+          new THREE.TubeGeometry(curve, 192, thickness, 6, true),
+          new THREE.MeshBasicMaterial({ color })
+        );
+        scene.add(circle);
+      }
+
+      function createCourseArrow(x, z, dx, dz) {
+        const shape = new THREE.Shape();
+        shape.moveTo(.34, 0);
+        shape.lineTo(-.13, .25);
+        shape.lineTo(-.03, 0);
+        shape.lineTo(-.13, -.25);
+        shape.closePath();
+        const arrow = new THREE.Mesh(
+          new THREE.ShapeGeometry(shape),
+          new THREE.MeshBasicMaterial({ color: 0x19bdf2, side: THREE.DoubleSide })
+        );
+        arrow.rotation.x = -Math.PI / 2;
+        arrow.rotation.z = Math.atan2(-dz, dx);
+        arrow.position.set(x, .082, z);
+        scene.add(arrow);
+      }
+
+      function createCoursePoint(label, x, z, labelX = x, labelZ = z - .5) {
+        const edge = new THREE.Mesh(
+          new THREE.CylinderGeometry(.13, .13, .025, 24),
+          new THREE.MeshBasicMaterial({ color: white })
+        );
+        edge.position.set(x, .06, z);
+        scene.add(edge);
+        const center = new THREE.Mesh(
+          new THREE.CylinderGeometry(.075, .075, .03, 24),
+          new THREE.MeshBasicMaterial({ color: 0xf03e4f })
+        );
+        center.position.set(x, .078, z);
+        scene.add(center);
+        makeTextLabel(label, labelX, labelZ, '#ff3f50');
+      }
+
+      // 15 m × 15 m 訓練場；雙圓相切的水平 8 字依使用者提供的 P1～P7 示意圖配置。
+      groundStrip(0, 0, 15, 15, 0x999c9e, .01);
       rectangleLines(0, 0, 15, 15, white, .11, .028);
       groundStrip(0, 0, .07, 15, white, .03);
-      groundStrip(0, 0, 15, .07, white, .03);
-      rectangleLines(0, -2.5, 13.8, 7, courseYellow, .045, .034);
-      rectangleLines(0, -2.5, 9, 3.6, courseYellow, .045, .034);
+      groundStrip(0, .9, 15, .07, white, .03);
+      groundStrip(0, TAKEOFF_Z, 15, .07, white, .03);
+
+      const circleCenters = [-3.2, 3.2];
+      circleCenters.forEach(cx => {
+        createGroundCircle(cx, -2.3, 3.7, 0xe73c49, .018, .038);
+        createGroundCircle(cx, -2.3, 2.05, 0xe73c49, .018, .039);
+        createGroundCircle(cx, -2.3, 3.2, 0x16bdf3, .055, .052);
+      });
+
+      // 左圈順時針、右圈逆時針，形成參考圖中的連續水平 8 字方向。
+      [[-3.2, -5.5, -1, 0], [-6.4, -2.3, 0, -1], [-3.2, .9, 1, 0],
+       [3.2, -5.5, 1, 0], [6.4, -2.3, 0, 1], [3.2, .9, -1, 0]].forEach(args => createCourseArrow(...args));
+
+      createCoursePoint('P1', -3.2, -5.5, -3.2, -4.95);
+      createCoursePoint('P2', -6.4, -2.3, -5.85, -2.3);
+      createCoursePoint('P3', -3.2, .9, -3.2, .4);
+      createCoursePoint('P4', 0, -2.3, -.55, -2.3);
+      createCoursePoint('P5', 3.2, -5.5, 3.2, -4.95);
+      createCoursePoint('P6', 6.4, -2.3, 5.85, -2.3);
+      createCoursePoint('P7', 3.2, .9, 3.2, .4);
 
       const pad = new THREE.Mesh(
         new THREE.CylinderGeometry(1, 1, .045, 64),
         new THREE.MeshStandardMaterial({ color: 0x3d454b, roughness: .78 })
       );
-      pad.position.y = .0225;
+      pad.position.set(0, .0225, TAKEOFF_Z);
       pad.receiveShadow = true;
       scene.add(pad);
       const padMark = new THREE.Mesh(new THREE.RingGeometry(.82, .9, 64), new THREE.MeshBasicMaterial({ color: white, side: THREE.DoubleSide }));
       padMark.rotation.x = -Math.PI / 2;
-      padMark.position.y = .047;
+      padMark.position.set(0, .047, TAKEOFF_Z);
       scene.add(padMark);
-      groundStrip(-.26, 0, .1, .62, white, .051);
-      groundStrip(.26, 0, .1, .62, white, .051);
-      groundStrip(0, 0, .58, .1, white, .052);
+      groundStrip(-.26, TAKEOFF_Z, .1, .62, white, .051);
+      groundStrip(.26, TAKEOFF_Z, .1, .62, white, .051);
+      groundStrip(0, TAKEOFF_Z, .58, .1, white, .052);
 
-      createCone(-6, 0, 'P1');
-      createCone(-6, -5, 'P2');
-      createCone(6, -5, 'P3');
-      createCone(6, 0, 'P4');
-
-      // 初學者用淡色 8 字參考線，兩圓交會點位於四標點中央。
-      const figureEightPoints = [];
-      for (let index = 0; index <= 160; index += 1) {
-        const angle = index / 160 * Math.PI * 2;
-        figureEightPoints.push(new THREE.Vector3(6 * Math.sin(angle), .052, -2.5 - 2.5 * Math.sin(angle * 2)));
-      }
-      const figureEight = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(figureEightPoints),
-        new THREE.LineDashedMaterial({ color: 0xbdefff, transparent: true, opacity: .5, dashSize: .28, gapSize: .22 })
-      );
-      figureEight.computeLineDistances();
-      scene.add(figureEight);
+      createCone(-6.85, -6.65, '');
+      createCone(6.85, -6.65, '');
 
       // 操作人與監評區（場圖主要距離：起降點後方 2.25 m）。
-      rectangleLines(0, 2.25, 1, 1.2, 0xece7d6, .06, .032);
-      rectangleLines(0, 3.4, 4, .6, 0xece7d6, .06, .032);
+      rectangleLines(0, 4.25, 1, 1.2, 0xece7d6, .06, .032);
+      rectangleLines(0, 5.4, 4, .6, 0xece7d6, .06, .032);
 
       function createTree(x, z, height = 4.6) {
         const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x5a3c24, roughness: .95 });
@@ -626,7 +678,7 @@
       const DRONE_RADIUS = .55;
       const drone = new THREE.Group();
       drone.rotation.order = 'YXZ';
-      drone.position.set(0, REST_Y, 0);
+      drone.position.set(0, REST_Y, TAKEOFF_Z);
       drone.scale.setScalar(.35);
       scene.add(drone);
 
@@ -669,6 +721,11 @@
       const forward = new THREE.Vector3();
       const right = new THREE.Vector3();
       const cameraTarget = new THREE.Vector3();
+      const freeCameraTarget = new THREE.Vector3();
+      let freeCameraYaw = 0;
+      let freeCameraPitch = .45;
+      let freeCameraDistance = 16;
+      let cameraDragButton = -1;
       let yawAngle = 0;
 
       function spawnCrashDebris() {
@@ -725,10 +782,62 @@
 
       const cameraLabels = ['追蹤', '環繞', '俯視'];
       document.querySelector('#camera-button').addEventListener('click', event => {
-        cameraMode = (cameraMode + 1) % cameraLabels.length;
+        cameraMode = cameraMode === 3 ? 0 : (cameraMode + 1) % cameraLabels.length;
         event.currentTarget.textContent = `相機：${cameraLabels[cameraMode]}`;
       });
       document.querySelector('#reset-button').addEventListener('click', resetDrone);
+
+      function enableFreeCamera() {
+        if (cameraMode === 3) return;
+        freeCameraTarget.copy(drone.position);
+        const offset = camera.position.clone().sub(freeCameraTarget);
+        freeCameraDistance = THREE.MathUtils.clamp(offset.length(), 3, 55);
+        freeCameraPitch = THREE.MathUtils.clamp(Math.asin(offset.y / freeCameraDistance), .12, 1.42);
+        freeCameraYaw = Math.atan2(offset.x, offset.z);
+        cameraMode = 3;
+        document.querySelector('#camera-button').textContent = '相機：自由';
+      }
+
+      renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
+      renderer.domElement.addEventListener('pointerdown', event => {
+        if (event.button !== 0 && event.button !== 2) return;
+        enableFreeCamera();
+        cameraDragButton = event.button;
+        renderer.domElement.classList.add('dragging');
+        renderer.domElement.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      renderer.domElement.addEventListener('pointermove', event => {
+        if (cameraDragButton < 0) return;
+        if (cameraDragButton === 2) {
+          freeCameraYaw -= event.movementX * .006;
+          freeCameraPitch = THREE.MathUtils.clamp(freeCameraPitch + event.movementY * .0045, .12, 1.42);
+        } else {
+          const moveScale = freeCameraDistance * .0018;
+          const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+          cameraRight.y = 0;
+          cameraRight.normalize();
+          const cameraForward = new THREE.Vector3();
+          camera.getWorldDirection(cameraForward);
+          cameraForward.y = 0;
+          cameraForward.normalize();
+          freeCameraTarget.addScaledVector(cameraRight, -event.movementX * moveScale);
+          freeCameraTarget.addScaledVector(cameraForward, event.movementY * moveScale);
+        }
+        event.preventDefault();
+      });
+      function endCameraDrag(event) {
+        cameraDragButton = -1;
+        renderer.domElement.classList.remove('dragging');
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+      }
+      renderer.domElement.addEventListener('pointerup', endCameraDrag);
+      renderer.domElement.addEventListener('pointercancel', endCameraDrag);
+      renderer.domElement.addEventListener('wheel', event => {
+        enableFreeCamera();
+        freeCameraDistance = THREE.MathUtils.clamp(freeCameraDistance * Math.exp(event.deltaY * .001), 3, 55);
+        event.preventDefault();
+      }, { passive: false });
 
       function animate() {
         requestAnimationFrame(animate);
@@ -768,7 +877,8 @@
         const activeYaw = armed && !crashed ? controls.yaw : 0;
         const activePitch = armed && !crashed ? controls.pitch : 0;
         const activeRoll = armed && !crashed ? controls.roll : 0;
-        yawAngle += activeYaw * 1.35 * dt;
+        // Three.js 的 Y 軸正旋轉是向左；反轉輸入，讓遙控器右旋對應機頭順時針向右。
+        yawAngle -= activeYaw * 1.35 * dt;
         // 機頭朝本地 -Z；前進時使用負 X 軸旋轉，讓機頭下沉、機尾抬高。
         const targetPitch = -activePitch * .3;
         const targetRoll = -activeRoll * .36;
@@ -825,17 +935,25 @@
           rotor.rotation.y += (index % 2 ? -1 : 1) * rotorSpeed * dt;
         });
 
-        cameraTarget.copy(drone.position);
         const elapsed = clock.elapsedTime;
+        const cameraFocus = cameraMode === 3 ? freeCameraTarget : drone.position;
+        cameraTarget.copy(cameraFocus);
         let cameraOffset;
         if (cameraMode === 1) {
           cameraOffset = new THREE.Vector3(Math.sin(elapsed * .18) * 15, 7.5, Math.cos(elapsed * .18) * 15);
         } else if (cameraMode === 2) {
           cameraOffset = new THREE.Vector3(.01, 18, .01);
+        } else if (cameraMode === 3) {
+          const horizontalDistance = Math.cos(freeCameraPitch) * freeCameraDistance;
+          cameraOffset = new THREE.Vector3(
+            Math.sin(freeCameraYaw) * horizontalDistance,
+            Math.sin(freeCameraPitch) * freeCameraDistance,
+            Math.cos(freeCameraYaw) * horizontalDistance
+          );
         } else {
           cameraOffset = new THREE.Vector3(10, 6.5, 13).applyAxisAngle(new THREE.Vector3(0, 1, 0), yawAngle * .18);
         }
-        const desiredCamera = cameraOffset.add(drone.position);
+        const desiredCamera = cameraOffset.add(cameraFocus);
         if (crashed && Date.now() - crashEventId < 900) {
           desiredCamera.add(new THREE.Vector3(
             (Math.random() - .5) * .22,
@@ -856,7 +974,7 @@
             type: 'telemetry',
             altitude,
             speed: velocity.length(),
-            heading: (THREE.MathUtils.radToDeg(yawAngle) % 360 + 360) % 360,
+            heading: (-THREE.MathUtils.radToDeg(yawAngle) % 360 + 360) % 360,
             battery: batteryLevel,
             armed,
             flightState: flightStateElement.textContent,

@@ -378,11 +378,17 @@
         left: { x: 0, y: 0 },
         right: { x: 0, y: 0 }
       };
+      const gestureSticks = {
+        left: { x: 0, y: 0, active: false },
+        right: { x: 0, y: 0, active: false }
+      };
+      const gestureTouches = new Map();
       let stickMode = localStorage.getItem('drone-stick-mode') === 'jp' ? 'jp' : 'us';
       let sensitivity = Number(localStorage.getItem('drone-sensitivity')) || 65;
       let remoteArmed = false;
       let gestureStartedAt = 0;
       let gestureCooldownUntil = 0;
+      let rawGestureTimer = 0;
       let lastCrashEvent = 0;
       let connection = null;
       let lastSent = '';
@@ -438,24 +444,95 @@
 
       function updateArmGesture() {
         const now = performance.now();
-        const inwardDown = physicalSticks.left.x > .62 && physicalSticks.left.y < -.62
-          && physicalSticks.right.x < -.62 && physicalSticks.right.y < -.62;
         const armButton = document.querySelector('#arm-button');
-        if (!remoteArmed && inwardDown && now > gestureCooldownUntil) {
-          if (!gestureStartedAt) gestureStartedAt = now;
+        if (rawGestureTimer) {
           const progress = Math.min(1, (now - gestureStartedAt) / 800);
           armButton.textContent = `內八解鎖 ${Math.round(progress * 100)}%`;
-          if (progress >= 1) {
-            sendCommand('arm');
-            showFeedback('馬達已解鎖');
-            gestureStartedAt = 0;
-            gestureCooldownUntil = now + 1500;
-          }
         } else {
-          gestureStartedAt = 0;
           armButton.textContent = remoteArmed ? '鎖定馬達' : '解鎖馬達';
         }
       }
+
+      // 內八另外追蹤兩根手指的原始位移，避免 nipplejs 在部分手機的多點觸控中
+      // 提早送出 end，造成保持進度意外歸零。這只負責解鎖判斷，不改動飛行軸值。
+      document.addEventListener('touchstart', event => {
+        for (const touch of event.changedTouches) {
+          const target = touch.target instanceof Element ? touch.target.closest('.stick-zone') : null;
+          let side = target?.id === 'left-stick' ? 'left' : target?.id === 'right-stick' ? 'right' : null;
+          // 部分瀏覽器會把同一批多點觸控的 target 都設成第一根手指所在元素；
+          // 此時改以兩個搖桿在畫面上的實際中心判斷每根手指屬於哪一側。
+          if (!side || event.touches.length > 1) {
+            const leftRect = document.querySelector('#left-stick').getBoundingClientRect();
+            const rightRect = document.querySelector('#right-stick').getBoundingClientRect();
+            const distanceTo = rect => Math.hypot(touch.clientX - (rect.left + rect.width / 2), touch.clientY - (rect.top + rect.height / 2));
+            const leftDistance = distanceTo(leftRect);
+            const rightDistance = distanceTo(rightRect);
+            const nearestRect = leftDistance <= rightDistance ? leftRect : rightRect;
+            if (Math.min(leftDistance, rightDistance) <= Math.max(nearestRect.width, nearestRect.height) * .72) {
+              side = leftDistance <= rightDistance ? 'left' : 'right';
+            }
+          }
+          if (!side) continue;
+          gestureTouches.set(touch.identifier, { side, startX: touch.clientX, startY: touch.clientY });
+          gestureSticks[side] = { x: 0, y: 0, active: true };
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchmove', event => {
+        const portrait = matchMedia('(orientation: portrait)').matches;
+        const leftRect = document.querySelector('#left-stick').getBoundingClientRect();
+        const rightRect = document.querySelector('#right-stick').getBoundingClientRect();
+        const centers = {
+          left: { x: leftRect.left + leftRect.width / 2, y: leftRect.top + leftRect.height / 2 },
+          right: { x: rightRect.left + rightRect.width / 2, y: rightRect.top + rightRect.height / 2 }
+        };
+        gestureSticks.left = { x: 0, y: 0, active: false };
+        gestureSticks.right = { x: 0, y: 0, active: false };
+        for (const touch of event.touches) {
+          const leftDistance = Math.hypot(touch.clientX - centers.left.x, touch.clientY - centers.left.y);
+          const rightDistance = Math.hypot(touch.clientX - centers.right.x, touch.clientY - centers.right.y);
+          const side = leftDistance <= rightDistance ? 'left' : 'right';
+          const dx = touch.clientX - centers[side].x;
+          const dy = touch.clientY - centers[side].y;
+          gestureSticks[side] = portrait
+            ? { x: clamp(dy / 48), y: clamp(dx / 48), active: true }
+            : { x: clamp(dx / 48), y: clamp(-dy / 48), active: true };
+        }
+        const inwardDown = gestureSticks.left.active && gestureSticks.right.active
+          && gestureSticks.left.x > .42 && gestureSticks.left.y < -.42
+          && gestureSticks.right.x < -.42 && gestureSticks.right.y < -.42;
+        if (!remoteArmed && inwardDown && !rawGestureTimer && performance.now() > gestureCooldownUntil) {
+          gestureStartedAt = performance.now();
+          rawGestureTimer = window.setTimeout(() => {
+            rawGestureTimer = 0;
+            if (!gestureSticks.left.active || !gestureSticks.right.active) return;
+            sendCommand('arm');
+            showFeedback('馬達已解鎖');
+            gestureStartedAt = 0;
+            gestureCooldownUntil = performance.now() + 1500;
+          }, 800);
+        }
+        updateArmGesture();
+      }, { passive: true });
+
+      function endGestureTouches(event) {
+        let endedArmTouch = false;
+        for (const touch of event.changedTouches) {
+          const tracked = gestureTouches.get(touch.identifier);
+          if (!tracked) continue;
+          gestureTouches.delete(touch.identifier);
+          gestureSticks[tracked.side] = { x: 0, y: 0, active: false };
+          endedArmTouch = true;
+        }
+        if ((endedArmTouch || event.touches.length < 2) && rawGestureTimer) {
+          clearTimeout(rawGestureTimer);
+          rawGestureTimer = 0;
+          gestureStartedAt = 0;
+        }
+        updateArmGesture();
+      }
+      document.addEventListener('touchend', endGestureTouches, { passive: true });
+      document.addEventListener('touchcancel', endGestureTouches, { passive: true });
 
       function setStickMode(mode) {
         stickMode = mode;
@@ -586,7 +663,7 @@
           document.querySelector('#battery').textContent = `${Math.round(Number(data.battery))}%`;
           const armButton = document.querySelector('#arm-button');
           remoteArmed = Boolean(data.armed);
-          armButton.textContent = data.armed ? '鎖定馬達' : '解鎖馬達';
+          if (!gestureStartedAt) armButton.textContent = data.armed ? '鎖定馬達' : '解鎖馬達';
           if (data.crashEvent && data.crashEvent !== lastCrashEvent) {
             lastCrashEvent = data.crashEvent;
             showFeedback(`⚠ 墜機：${data.crashReason || '發生碰撞'}`);
