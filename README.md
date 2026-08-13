@@ -44,6 +44,10 @@ python3 -m http.server 8000
 - `controller.html`：手機雙搖桿遙控器
 - `GUIDE.md`：完整操作、模式說明與疑難排解
 
+## 架構摘要
+
+GitHub Pages 只負責提供 HTML、CSS 與 JavaScript 靜態檔案。電腦與手機載入頁面後，由 PeerJS 使用公用 signaling server 協助建立 WebRTC DataChannel；連線完成後，控制與遙測資料在兩個瀏覽器之間即時交換。QR Code 只是把帶有電腦 Peer ID 的手機控制器網址快速交給手機。更完整的流程說明請見 [GUIDE.md](GUIDE.md#8-運作原理為什麼只有-html-也能連線)。
+
 ## 技術限制
 
 此專案以 PeerJS 公用 signaling server 協助建立 WebRTC 連線。部分公司、校園或行動網路可能因防火牆或 NAT 規則無法建立點對點連線。這不會影響 GitHub Pages 部署，但正式產品建議自架 PeerServer 與 TURN 服務。

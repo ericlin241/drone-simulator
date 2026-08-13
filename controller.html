@@ -39,6 +39,8 @@
     }
 
     .topbar {
+      position: relative;
+      z-index: 6;
       min-height: 58px;
       flex: 0 0 58px;
       display: flex;
@@ -61,7 +63,9 @@
       border: 1px solid rgba(255,255,255,.1);
       border-radius: 11px;
       background: rgba(0,0,0,.22);
-      transform: translateX(-50%);
+      top: 50%;
+      transform: translate(-50%, -50%);
+      touch-action: manipulation;
     }
 
     .mode-switch button {
@@ -74,6 +78,8 @@
       font-size: .68rem;
       font-weight: 700;
       white-space: nowrap;
+      cursor: pointer;
+      touch-action: manipulation;
     }
     .mode-switch button.active { background: linear-gradient(135deg, #2aa6d5, #2286ae); color: white; box-shadow: 0 4px 16px rgba(42,166,213,.3); }
 
@@ -214,6 +220,12 @@
         transform-origin: top left;
         transform: rotate(90deg) translateY(-100%);
       }
+
+      /* nipplejs 以螢幕座標計算位移；抵銷外層旋轉，讓搖桿圓點跟著手指。 */
+      .stick-zone .nipple {
+        transform: rotate(-90deg) !important;
+        transform-origin: center !important;
+      }
     }
 
     @media (max-height: 420px) {
@@ -231,8 +243,8 @@
     <header class="topbar">
       <div class="brand"><h1>DRONE CONTROL</h1><small>WEB FLIGHT LAB</small></div>
       <div class="mode-switch" role="group" aria-label="搖桿模式">
-        <button id="mode-us" class="active" type="button">美國手 M2</button>
-        <button id="mode-jp" type="button">日本手 M1</button>
+        <button id="mode-us" class="active" type="button" aria-pressed="true">美國手 M2</button>
+        <button id="mode-jp" type="button" aria-pressed="false">日本手 M1</button>
       </div>
       <div id="status">準備連線</div>
     </header>
@@ -323,6 +335,8 @@
         localStorage.setItem('drone-stick-mode', mode);
         modeButtons.us.classList.toggle('active', mode === 'us');
         modeButtons.jp.classList.toggle('active', mode === 'jp');
+        modeButtons.us.setAttribute('aria-pressed', String(mode === 'us'));
+        modeButtons.jp.setAttribute('aria-pressed', String(mode === 'jp'));
         const japanese = mode === 'jp';
         document.querySelector('#left-top').textContent = japanese ? '前進' : '上升';
         document.querySelector('#left-bottom').textContent = japanese ? '後退' : '下降';
@@ -344,7 +358,15 @@
           restJoystick: true
         });
         manager.on('move', (_event, data) => {
-          if (data?.vector) onMove(clamp(data.vector.x), clamp(data.vector.y));
+          if (!data?.vector) return;
+          const rawX = clamp(data.vector.x);
+          const rawY = clamp(data.vector.y);
+          if (matchMedia('(orientation: portrait)').matches) {
+            // 外層順時針 90°：螢幕右方等於控制器的上方。
+            onMove(-rawY, rawX);
+          } else {
+            onMove(rawX, rawY);
+          }
         });
         manager.on('end', onEnd);
         return manager;

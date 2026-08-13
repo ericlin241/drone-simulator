@@ -91,3 +91,20 @@ python3 -m http.server 8000
 電腦使用 `http://localhost:8000`；手機測試時，請將 `localhost` 改成電腦在同一區域網路中的 IP。正式部署則在 GitHub 儲存庫的 **Settings → Pages** 選擇從分支根目錄發布。
 
 所有第三方程式庫均由 CDN 載入，沒有 npm 安裝或建置步驟。若要提高正式環境可靠度，可把依賴檔案放進專案、設定自己的 PeerServer，並加入 TURN 伺服器。
+
+## 8. 運作原理：為什麼只有 HTML 也能連線？
+
+HTML 檔案不只可以放文字，也能包含 CSS 與 JavaScript。GitHub Pages 負責用 HTTPS 把這些靜態檔案送到瀏覽器；頁面載入後，真正的 3D 運算、觸控處理和網路連線都由瀏覽器內的 JavaScript 執行。
+
+配對與控制流程如下：
+
+1. 電腦端載入 `index.html`，JavaScript 建立隨機 Peer ID。
+2. PeerJS 先透過公用 signaling server 登記這個 ID。signaling server 只協助雙方找到彼此及交換 WebRTC 連線資訊。
+3. 電腦把 `controller.html?peer=電腦的PeerID` 完整網址編成 QR Code。
+4. 手機掃描後，`controller.html` 從網址讀出 Peer ID，請 PeerJS 連向電腦端。
+5. WebRTC DataChannel 建立後，手機把四軸數值與飛行命令直接傳給電腦；電腦則把高度、速度、航向與電量傳回手機。
+6. Three.js 每一幀讀取最新控制值，計算簡化的速度、阻尼、位置和旋轉，再重畫 3D 場景。
+
+因此專案不需要自行撰寫後端程式，但並不是完全沒有外部服務：首次配對仍依賴 PeerJS 公用 signaling server，第三方程式庫也由 jsDelivr CDN 載入。多數情況下控制資料會走瀏覽器之間的 WebRTC 點對點連線；遇到嚴格 NAT 或防火牆時，若沒有合適的 TURN 轉送服務，連線仍可能失敗。
+
+手機直向時，CSS 會把整個橫向控制器順時針旋轉 90°。由於 nipplejs 原本以螢幕座標計算手指位移，程式會同步反向旋轉搖桿圖形，並把輸入向量換算回控制器本身的座標軸，避免搖桿與手指相差 90°。
