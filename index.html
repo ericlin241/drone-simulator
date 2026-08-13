@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web 無人機模擬器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, "Noto Sans TC", system-ui, sans-serif;
+      background: #07111f;
+      color: #eef7ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    canvas { display: block; }
+
+    .hud {
+      position: fixed;
+      z-index: 2;
+      top: 20px;
+      left: 20px;
+      width: min(360px, calc(100vw - 40px));
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 20px;
+      background: linear-gradient(145deg, rgba(7, 22, 39, .9), rgba(4, 13, 25, .72));
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .28);
+      backdrop-filter: blur(18px);
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.15rem;
+      letter-spacing: .04em;
+    }
+
+    .eyebrow { margin: 0 0 4px; color: #61d9ff; font-size: .66rem; font-weight: 800; letter-spacing: .18em; }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 16px;
+      color: #a9bbce;
+      font-size: .88rem;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #ffba49;
+      box-shadow: 0 0 14px currentColor;
+    }
+
+    .status.connected .status-dot { background: #48e5a3; }
+    .status.error .status-dot { background: #ff6379; }
+
+    .pairing {
+      display: grid;
+      grid-template-columns: 128px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    #qrcode {
+      width: 128px;
+      height: 128px;
+      padding: 8px;
+      border-radius: 10px;
+      background: white;
+    }
+
+    #qrcode img, #qrcode canvas { width: 100%; height: 100%; }
+
+    .hint {
+      margin: 0;
+      color: #c5d4e3;
+      font-size: .82rem;
+      line-height: 1.55;
+    }
+
+    .peer-id {
+      display: block;
+      margin-top: 8px;
+      color: #72d8ff;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: .72rem;
+      word-break: break-all;
+    }
+
+    .desktop-actions { display: flex; gap: 8px; margin-top: 14px; }
+    button {
+      flex: 1;
+      padding: 9px 10px;
+      border: 1px solid rgba(119, 220, 255, .24);
+      border-radius: 10px;
+      background: rgba(62, 178, 220, .09);
+      color: #dff7ff;
+      font: inherit;
+      font-size: .72rem;
+      cursor: pointer;
+    }
+    button:hover { background: rgba(62, 178, 220, .2); }
+
+    .telemetry {
+      position: fixed;
+      z-index: 2;
+      right: 20px;
+      bottom: 20px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(66px, 1fr));
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 16px;
+      background: rgba(5, 15, 28, .72);
+      backdrop-filter: blur(14px);
+    }
+
+    .meter { text-align: center; }
+    .meter span { display: block; color: #8ca1b5; font-size: .66rem; text-transform: uppercase; }
+    .meter strong { font: 600 .88rem ui-monospace, monospace; }
+
+    .flight-card {
+      position: fixed;
+      z-index: 2;
+      top: 20px;
+      right: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      gap: 18px;
+      padding: 12px 16px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 16px;
+      background: rgba(5,15,28,.72);
+      backdrop-filter: blur(14px);
+    }
+    .flight-card span { display: block; color: #829aaf; font-size: .62rem; letter-spacing: .08em; }
+    .flight-card strong { color: #e8f8ff; font: 700 .88rem ui-monospace, monospace; }
+    #flight-state { color: #ffca62; }
+
+    @media (max-width: 620px) {
+      .pairing { grid-template-columns: 104px 1fr; }
+      #qrcode { width: 104px; height: 104px; }
+      .telemetry { right: 10px; bottom: 10px; left: 10px; }
+      .flight-card { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <section class="hud" aria-live="polite">
+    <p class="eyebrow">WEB FLIGHT LAB</p>
+    <h1>無人機模擬器</h1>
+    <p id="status" class="status"><span class="status-dot"></span><span>正在建立連線代碼…</span></p>
+    <div class="pairing">
+      <div id="qrcode" aria-label="手機遙控器 QR Code"></div>
+      <p class="hint">
+        使用手機掃描 QR Code，開啟遙控器後即可操作。兩台裝置都需連上網路。
+        <span id="peer-id" class="peer-id"></span>
+      </p>
+    </div>
+    <div class="desktop-actions">
+      <button id="camera-button" type="button">相機：追蹤</button>
+      <button id="reset-button" type="button">重設位置</button>
+    </div>
+  </section>
+
+  <section class="flight-card" aria-label="飛行資訊">
+    <div><span>FLIGHT</span><strong id="flight-state">未解鎖</strong></div>
+    <div><span>ALTITUDE</span><strong id="altitude">1.0 m</strong></div>
+    <div><span>BATTERY</span><strong id="battery">100%</strong></div>
+  </section>
+
+  <section class="telemetry" aria-label="控制數值">
+    <div class="meter"><span>Throttle</span><strong id="t-throttle">0.00</strong></div>
+    <div class="meter"><span>Yaw</span><strong id="t-yaw">0.00</strong></div>
+    <div class="meter"><span>Pitch</span><strong id="t-pitch">0.00</strong></div>
+    <div class="meter"><span>Roll</span><strong id="t-roll">0.00</strong></div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const statusElement = document.querySelector('#status');
+      const statusText = statusElement.lastElementChild;
+      const peerIdElement = document.querySelector('#peer-id');
+      const telemetry = {
+        throttle: document.querySelector('#t-throttle'),
+        yaw: document.querySelector('#t-yaw'),
+        pitch: document.querySelector('#t-pitch'),
+        roll: document.querySelector('#t-roll')
+      };
+      const controls = { throttle: 0, yaw: 0, pitch: 0, roll: 0 };
+      const flightStateElement = document.querySelector('#flight-state');
+      const altitudeElement = document.querySelector('#altitude');
+      const batteryElement = document.querySelector('#battery');
+      let armed = false;
+      let autoFlight = null;
+      let batteryLevel = 100;
+      let cameraMode = 0;
+      let lastTelemetryAt = 0;
+
+      function setStatus(message, type = '') {
+        statusText.textContent = message;
+        statusElement.className = `status ${type}`.trim();
+      }
+
+      function clampInput(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? Math.max(-1, Math.min(1, number)) : 0;
+      }
+
+      function setFlightState(label, color = '#ffca62') {
+        flightStateElement.textContent = label;
+        flightStateElement.style.color = color;
+      }
+
+      function resetDrone() {
+        drone.position.set(0, 1.4, 0);
+        velocity.set(0, 0, 0);
+        yawAngle = 0;
+        autoFlight = null;
+      }
+
+      function handleCommand(command) {
+        switch (command) {
+          case 'arm':
+            armed = !armed;
+            autoFlight = null;
+            if (!armed) velocity.set(0, 0, 0);
+            setFlightState(armed ? '已解鎖' : '未解鎖', armed ? '#55e7aa' : '#ffca62');
+            break;
+          case 'takeoff':
+            armed = true;
+            autoFlight = 'takeoff';
+            setFlightState('自動起飛', '#65dcff');
+            break;
+          case 'land':
+            if (armed) {
+              autoFlight = 'land';
+              setFlightState('自動降落', '#65dcff');
+            }
+            break;
+          case 'emergency':
+            armed = false;
+            autoFlight = null;
+            Object.keys(controls).forEach(key => { controls[key] = 0; });
+            velocity.set(0, 0, 0);
+            setFlightState('緊急停止', '#ff6379');
+            break;
+          case 'reset':
+            resetDrone();
+            break;
+        }
+      }
+
+      function randomPeerId() {
+        if (crypto.randomUUID) return `drone-${crypto.randomUUID()}`;
+        const bytes = crypto.getRandomValues(new Uint8Array(12));
+        return `drone-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
+      }
+
+      const peerId = randomPeerId();
+      const peer = new Peer(peerId);
+      let activeConnection = null;
+
+      peer.on('open', id => {
+        peerIdElement.textContent = `Peer ID: ${id}`;
+        const controllerUrl = new URL('controller.html', window.location.href);
+        controllerUrl.search = '';
+        controllerUrl.hash = '';
+        controllerUrl.searchParams.set('peer', id);
+        document.querySelector('#qrcode').replaceChildren();
+        new QRCode(document.querySelector('#qrcode'), {
+          text: controllerUrl.href,
+          width: 112,
+          height: 112,
+          colorDark: '#07111f',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+        setStatus('等待手機遙控器連線…');
+      });
+
+      peer.on('connection', connection => {
+        if (activeConnection?.open) activeConnection.close();
+        activeConnection = connection;
+
+        connection.on('open', () => setStatus('手機遙控器已連線', 'connected'));
+        connection.on('data', data => {
+          if (!data || typeof data !== 'object') return;
+          if (data.type === 'command') {
+            handleCommand(data.command);
+            return;
+          }
+          const source = data.type === 'controls' ? data.values : data;
+          for (const key of Object.keys(controls)) {
+            controls[key] = clampInput(source?.[key]);
+            telemetry[key].textContent = controls[key].toFixed(2);
+          }
+        });
+        connection.on('close', () => {
+          Object.keys(controls).forEach(key => { controls[key] = 0; });
+          setStatus('連線已中斷，等待重新連線…');
+        });
+        connection.on('error', () => setStatus('遙控器連線發生錯誤', 'error'));
+      });
+
+      peer.on('error', error => {
+        console.error(error);
+        setStatus(`PeerJS 錯誤：${error.type || 'unknown'}`, 'error');
+      });
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x89bddd);
+      scene.fog = new THREE.Fog(0x89bddd, 35, 110);
+
+      const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+      camera.position.set(10, 7, 13);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      document.body.prepend(renderer.domElement);
+
+      scene.add(new THREE.HemisphereLight(0xd9f3ff, 0x41552f, 2.2));
+      const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+      sun.position.set(12, 20, 8);
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(2048, 2048);
+      sun.shadow.camera.left = -30;
+      sun.shadow.camera.right = 30;
+      sun.shadow.camera.top = 30;
+      sun.shadow.camera.bottom = -30;
+      scene.add(sun);
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(180, 180),
+        new THREE.MeshStandardMaterial({ color: 0x668553, roughness: 1 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const grid = new THREE.GridHelper(180, 90, 0x385943, 0x58784f);
+      grid.position.y = 0.012;
+      scene.add(grid);
+
+      const pad = new THREE.Mesh(
+        new THREE.CylinderGeometry(3.4, 3.6, .12, 64),
+        new THREE.MeshStandardMaterial({ color: 0x26343e, roughness: .85 })
+      );
+      pad.position.y = .06;
+      pad.receiveShadow = true;
+      scene.add(pad);
+
+      const padMark = new THREE.Mesh(
+        new THREE.RingGeometry(2.25, 2.48, 64),
+        new THREE.MeshBasicMaterial({ color: 0x65dcff, side: THREE.DoubleSide })
+      );
+      padMark.rotation.x = -Math.PI / 2;
+      padMark.position.y = .125;
+      scene.add(padMark);
+
+      const sceneryMaterial = new THREE.MeshStandardMaterial({ color: 0x415868, roughness: .78 });
+      const treeTopMaterial = new THREE.MeshStandardMaterial({ color: 0x285c43, roughness: 1 });
+      const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x5d4938, roughness: 1 });
+      for (let index = 0; index < 34; index += 1) {
+        const angle = index * 2.399;
+        const radius = 12 + (index % 7) * 4.2;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        if (index % 5 === 0) {
+          const height = 2.5 + (index % 4) * 1.4;
+          const building = new THREE.Mesh(new THREE.BoxGeometry(2.8, height, 2.8), sceneryMaterial);
+          building.position.set(x, height / 2, z);
+          building.castShadow = true;
+          building.receiveShadow = true;
+          scene.add(building);
+        } else {
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.13, .18, 1.1, 8), trunkMaterial);
+          trunk.position.set(x, .55, z);
+          trunk.castShadow = true;
+          scene.add(trunk);
+          const crown = new THREE.Mesh(new THREE.ConeGeometry(.85, 2.25, 10), treeTopMaterial);
+          crown.position.set(x, 1.85, z);
+          crown.castShadow = true;
+          scene.add(crown);
+        }
+      }
+
+      const drone = new THREE.Group();
+      drone.rotation.order = 'YXZ';
+      drone.position.set(0, 1.4, 0);
+      scene.add(drone);
+
+      const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x172331, metalness: .55, roughness: .3 });
+      const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x40d7ff, emissive: 0x063a52, metalness: .35, roughness: .28 });
+      const rotorMaterial = new THREE.MeshStandardMaterial({ color: 0x0b1016, transparent: true, opacity: .72 });
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.45, .36, 1), darkMaterial);
+      body.castShadow = true;
+      drone.add(body);
+
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(.22, .5, 4), accentMaterial);
+      nose.rotation.x = Math.PI / 2;
+      nose.position.z = -.72;
+      nose.castShadow = true;
+      drone.add(nose);
+
+      const rotors = [];
+      [[-1.05, -1.05], [1.05, -1.05], [-1.05, 1.05], [1.05, 1.05]].forEach(([x, z]) => {
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(.13, .1, 2.25), darkMaterial);
+        arm.position.set(x * .48, 0, z * .48);
+        arm.rotation.y = x === z ? -Math.PI / 4 : Math.PI / 4;
+        arm.castShadow = true;
+        drone.add(arm);
+
+        const motor = new THREE.Mesh(new THREE.CylinderGeometry(.17, .2, .22, 18), accentMaterial);
+        motor.position.set(x, .08, z);
+        motor.castShadow = true;
+        drone.add(motor);
+
+        const rotor = new THREE.Mesh(new THREE.CylinderGeometry(.58, .58, .025, 32), rotorMaterial);
+        rotor.position.set(x, .23, z);
+        rotor.castShadow = true;
+        drone.add(rotor);
+        rotors.push(rotor);
+      });
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(2.7, 2.78, 72),
+        new THREE.MeshBasicMaterial({ color: 0xdaf6ff, transparent: true, opacity: .5, side: THREE.DoubleSide })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = .025;
+      scene.add(ring);
+
+      const clock = new THREE.Clock();
+      const velocity = new THREE.Vector3();
+      const forward = new THREE.Vector3();
+      const right = new THREE.Vector3();
+      const cameraTarget = new THREE.Vector3();
+      let yawAngle = 0;
+
+      const cameraLabels = ['追蹤', '環繞', '俯視'];
+      document.querySelector('#camera-button').addEventListener('click', event => {
+        cameraMode = (cameraMode + 1) % cameraLabels.length;
+        event.currentTarget.textContent = `相機：${cameraLabels[cameraMode]}`;
+      });
+      document.querySelector('#reset-button').addEventListener('click', resetDrone);
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const dt = Math.min(clock.getDelta(), .05);
+
+        if (armed && batteryLevel > 0) {
+          batteryLevel = Math.max(0, batteryLevel - dt * (.018 + Math.abs(controls.throttle) * .022));
+        }
+        if (batteryLevel <= 0) {
+          armed = false;
+          autoFlight = 'land';
+          setFlightState('低電量降落', '#ff6379');
+        }
+
+        let verticalControl = armed ? controls.throttle : 0;
+        if (autoFlight === 'takeoff') {
+          verticalControl = drone.position.y < 3.42 ? .58 : 0;
+          if (drone.position.y >= 3.42) {
+            drone.position.y = 3.42;
+            velocity.y = 0;
+            autoFlight = null;
+            setFlightState('懸停', '#55e7aa');
+          }
+        } else if (autoFlight === 'land') {
+          verticalControl = drone.position.y > .46 ? -.4 : 0;
+          if (drone.position.y <= .46) {
+            drone.position.y = .42;
+            velocity.y = 0;
+            autoFlight = null;
+            armed = false;
+            setFlightState('已降落', '#ffca62');
+          }
+        }
+
+        const activeYaw = armed ? controls.yaw : 0;
+        const activePitch = armed ? controls.pitch : 0;
+        const activeRoll = armed ? controls.roll : 0;
+        yawAngle += activeYaw * 1.65 * dt;
+        const targetPitch = activePitch * .32;
+        const targetRoll = -activeRoll * .36;
+        drone.rotation.y = yawAngle;
+        drone.rotation.x = THREE.MathUtils.lerp(drone.rotation.x, targetPitch, 1 - Math.exp(-7 * dt));
+        drone.rotation.z = THREE.MathUtils.lerp(drone.rotation.z, targetRoll, 1 - Math.exp(-7 * dt));
+
+        forward.set(-Math.sin(yawAngle), 0, -Math.cos(yawAngle));
+        right.set(Math.cos(yawAngle), 0, -Math.sin(yawAngle));
+        velocity.addScaledVector(forward, activePitch * 7 * dt);
+        velocity.addScaledVector(right, activeRoll * 7 * dt);
+        velocity.y += verticalControl * 8 * dt;
+        velocity.multiplyScalar(Math.exp(-2.15 * dt));
+        drone.position.addScaledVector(velocity, dt);
+        drone.position.y = Math.max(.42, Math.min(22, drone.position.y));
+        if (drone.position.y <= .421 && velocity.y < 0) velocity.y = 0;
+
+        rotors.forEach((rotor, index) => {
+          const rotorSpeed = armed ? 22 + Math.abs(verticalControl) * 30 : 2;
+          rotor.rotation.y += (index % 2 ? -1 : 1) * rotorSpeed * dt;
+        });
+
+        cameraTarget.copy(drone.position);
+        const elapsed = clock.elapsedTime;
+        let cameraOffset;
+        if (cameraMode === 1) {
+          cameraOffset = new THREE.Vector3(Math.sin(elapsed * .18) * 15, 7.5, Math.cos(elapsed * .18) * 15);
+        } else if (cameraMode === 2) {
+          cameraOffset = new THREE.Vector3(.01, 18, .01);
+        } else {
+          cameraOffset = new THREE.Vector3(10, 6.5, 13).applyAxisAngle(new THREE.Vector3(0, 1, 0), yawAngle * .18);
+        }
+        const desiredCamera = cameraOffset.add(drone.position);
+        camera.position.lerp(desiredCamera, 1 - Math.exp(-2.4 * dt));
+        camera.lookAt(cameraTarget);
+
+        const altitude = Math.max(0, drone.position.y - .42);
+        altitudeElement.textContent = `${altitude.toFixed(1)} m`;
+        batteryElement.textContent = `${Math.round(batteryLevel)}%`;
+        batteryElement.style.color = batteryLevel < 20 ? '#ff6379' : '#e8f8ff';
+        if (activeConnection?.open && elapsed - lastTelemetryAt > .15) {
+          activeConnection.send({
+            type: 'telemetry',
+            altitude,
+            speed: velocity.length(),
+            heading: (THREE.MathUtils.radToDeg(yawAngle) % 360 + 360) % 360,
+            battery: batteryLevel,
+            armed,
+            flightState: flightStateElement.textContent
+          });
+          lastTelemetryAt = elapsed;
+        }
+        renderer.render(scene, camera);
+      }
+
+      addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      });
+
+      animate();
+    })();
+  </script>
+</body>
+</html>

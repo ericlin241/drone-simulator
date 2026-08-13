@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>無人機遙控器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, "Noto Sans TC", system-ui, sans-serif;
+      background: #040a12;
+      color: #f0f7ff;
+      touch-action: none;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
+    #controller {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background:
+        radial-gradient(circle at 20% 50%, rgba(31, 131, 174, .22), transparent 34%),
+        radial-gradient(circle at 80% 50%, rgba(52, 203, 151, .16), transparent 34%),
+        linear-gradient(145deg, #0b1725, #050a11);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .topbar {
+      min-height: 58px;
+      flex: 0 0 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: max(8px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right)) 8px max(22px, env(safe-area-inset-left));
+      border-bottom: 1px solid rgba(255,255,255,.09);
+      background: rgba(3, 9, 16, .5);
+    }
+
+    h1 { margin: 0; font-size: .95rem; letter-spacing: .12em; }
+
+    .brand small { display: block; margin-top: 2px; color: #6098b6; font-size: .55rem; letter-spacing: .12em; }
+
+    .mode-switch {
+      position: absolute;
+      left: 50%;
+      display: flex;
+      padding: 3px;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 11px;
+      background: rgba(0,0,0,.22);
+      transform: translateX(-50%);
+    }
+
+    .mode-switch button {
+      padding: 6px 12px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #7f94a7;
+      font-family: inherit;
+      font-size: .68rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .mode-switch button.active { background: linear-gradient(135deg, #2aa6d5, #2286ae); color: white; box-shadow: 0 4px 16px rgba(42,166,213,.3); }
+
+    #status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #a9bbcd;
+      font-size: .76rem;
+    }
+
+    #status::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ffba49;
+      box-shadow: 0 0 12px currentColor;
+    }
+
+    #status.connected::before { background: #45e2a2; }
+    #status.error::before { background: #ff6077; }
+
+    .sticks {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      align-items: stretch;
+      justify-content: space-evenly;
+      gap: 2.2vw;
+      padding: 10px max(24px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    }
+
+    .stick-panel {
+      position: relative;
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: 28px;
+      background: rgba(255, 255, 255, .025);
+    }
+
+    .center-controls {
+      flex: 0 0 clamp(88px, 14vw, 138px);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-content: center;
+      gap: 7px;
+    }
+
+    .command-button {
+      min-height: 42px;
+      padding: 7px 4px;
+      border: 1px solid rgba(255,255,255,.11);
+      border-radius: 11px;
+      background: linear-gradient(145deg, rgba(26,49,67,.95), rgba(13,28,42,.95));
+      color: #dcecf7;
+      font-family: inherit;
+      font-size: clamp(.54rem, 1.4vw, .68rem);
+      font-weight: 700;
+      letter-spacing: .03em;
+    }
+    .command-button:active { transform: scale(.96); background: #234b64; }
+    .command-button.wide { grid-column: 1 / -1; }
+    .command-button.danger { border-color: rgba(255,82,111,.38); background: rgba(113,25,43,.6); color: #ffb3c0; }
+
+    .telemetry-strip {
+      position: absolute;
+      z-index: 3;
+      top: 64px;
+      left: 50%;
+      display: flex;
+      gap: 18px;
+      padding: 5px 13px;
+      border-radius: 999px;
+      background: rgba(2,9,15,.56);
+      color: #7893a8;
+      font-size: .58rem;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .telemetry-strip strong { margin-left: 4px; color: #cfefff; font-family: ui-monospace, monospace; }
+
+    .stick-zone {
+      position: absolute;
+      inset: 30px;
+    }
+
+    .axis-label {
+      position: absolute;
+      z-index: 1;
+      color: rgba(217, 233, 246, .48);
+      font-size: clamp(.6rem, 1.8vw, .78rem);
+      letter-spacing: .08em;
+      pointer-events: none;
+    }
+
+    .axis-label.top { top: 12px; left: 50%; transform: translateX(-50%); }
+    .axis-label.bottom { bottom: 12px; left: 50%; transform: translateX(-50%); }
+    .axis-label.left { left: 12px; top: 50%; transform: translateY(-50%); }
+    .axis-label.right { right: 12px; top: 50%; transform: translateY(-50%); }
+
+    .values {
+      position: absolute;
+      z-index: 2;
+      bottom: 9px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #7fdfff;
+      font: .68rem ui-monospace, monospace;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .missing-peer {
+      position: absolute;
+      z-index: 10;
+      inset: 0;
+      display: none;
+      place-items: center;
+      padding: 28px;
+      text-align: center;
+      background: #07111f;
+      line-height: 1.7;
+    }
+
+    .missing-peer.visible { display: grid; }
+
+    /* 直向握持時，把整個控制器畫布順時針轉 90 度並交換寬高。 */
+    @media (orientation: portrait) {
+      #controller {
+        width: 100vh;
+        height: 100vw;
+        inset: 0 auto auto 0;
+        transform-origin: top left;
+        transform: rotate(90deg) translateY(-100%);
+      }
+    }
+
+    @media (max-height: 420px) {
+      .topbar { height: 44px; flex-basis: 44px; }
+      .sticks { padding-top: 6px; padding-bottom: 7px; }
+      .stick-panel { border-radius: 20px; }
+      .stick-zone { inset: 22px; }
+      .telemetry-strip { top: 48px; }
+      .command-button { min-height: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="controller">
+    <header class="topbar">
+      <div class="brand"><h1>DRONE CONTROL</h1><small>WEB FLIGHT LAB</small></div>
+      <div class="mode-switch" role="group" aria-label="搖桿模式">
+        <button id="mode-us" class="active" type="button">美國手 M2</button>
+        <button id="mode-jp" type="button">日本手 M1</button>
+      </div>
+      <div id="status">準備連線</div>
+    </header>
+
+    <div class="telemetry-strip">
+      <span>高度<strong id="altitude">--</strong></span>
+      <span>速度<strong id="speed">--</strong></span>
+      <span>航向<strong id="heading">--</strong></span>
+      <span>電量<strong id="battery">--</strong></span>
+    </div>
+
+    <section class="sticks">
+      <div class="stick-panel">
+        <span id="left-top" class="axis-label top">上升</span>
+        <span id="left-bottom" class="axis-label bottom">下降</span>
+        <span class="axis-label left">左旋</span>
+        <span class="axis-label right">右旋</span>
+        <div id="left-stick" class="stick-zone"></div>
+        <output id="left-values" class="values">T 0.00 · Y 0.00</output>
+      </div>
+
+      <nav class="center-controls" aria-label="飛行功能">
+        <button id="arm-button" class="command-button wide" type="button">解鎖馬達</button>
+        <button class="command-button" type="button" data-command="takeoff">自動起飛</button>
+        <button class="command-button" type="button" data-command="land">自動降落</button>
+        <button class="command-button" type="button" data-command="reset">重設位置</button>
+        <button class="command-button danger" type="button" data-command="emergency">緊急停止</button>
+      </nav>
+
+      <div class="stick-panel">
+        <span id="right-top" class="axis-label top">前進</span>
+        <span id="right-bottom" class="axis-label bottom">後退</span>
+        <span class="axis-label left">左移</span>
+        <span class="axis-label right">右移</span>
+        <div id="right-stick" class="stick-zone"></div>
+        <output id="right-values" class="values">P 0.00 · R 0.00</output>
+      </div>
+    </section>
+
+    <div id="missing-peer" class="missing-peer">
+      <p>網址中缺少 Peer ID。<br>請回到電腦端首頁，重新掃描 QR Code 開啟遙控器。</p>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const peerId = new URLSearchParams(location.search).get('peer');
+      const statusElement = document.querySelector('#status');
+      const controlState = { throttle: 0, yaw: 0, pitch: 0, roll: 0 };
+      const modeButtons = {
+        us: document.querySelector('#mode-us'),
+        jp: document.querySelector('#mode-jp')
+      };
+      let stickMode = localStorage.getItem('drone-stick-mode') === 'jp' ? 'jp' : 'us';
+      let connection = null;
+      let lastSent = '';
+
+      function setStatus(message, type = '') {
+        statusElement.textContent = message;
+        statusElement.className = type;
+      }
+
+      function clamp(value) {
+        return Math.max(-1, Math.min(1, Number(value) || 0));
+      }
+
+      function sendControls(force = false) {
+        if (!connection?.open) return;
+        const payload = JSON.stringify(controlState);
+        if (force || payload !== lastSent) {
+          connection.send({ type: 'controls', values: { ...controlState }, stickMode });
+          lastSent = payload;
+        }
+      }
+
+      function sendCommand(command) {
+        if (!connection?.open) return;
+        connection.send({ type: 'command', command });
+        if (navigator.vibrate) navigator.vibrate(command === 'emergency' ? [80, 40, 120] : 35);
+      }
+
+      function setStickMode(mode) {
+        stickMode = mode;
+        localStorage.setItem('drone-stick-mode', mode);
+        modeButtons.us.classList.toggle('active', mode === 'us');
+        modeButtons.jp.classList.toggle('active', mode === 'jp');
+        const japanese = mode === 'jp';
+        document.querySelector('#left-top').textContent = japanese ? '前進' : '上升';
+        document.querySelector('#left-bottom').textContent = japanese ? '後退' : '下降';
+        document.querySelector('#right-top').textContent = japanese ? '上升' : '前進';
+        document.querySelector('#right-bottom').textContent = japanese ? '下降' : '後退';
+        Object.keys(controlState).forEach(key => { controlState[key] = 0; });
+        document.querySelector('#left-values').value = japanese ? 'P 0.00 · Y 0.00' : 'T 0.00 · Y 0.00';
+        document.querySelector('#right-values').value = japanese ? 'T 0.00 · R 0.00' : 'P 0.00 · R 0.00';
+        sendControls(true);
+      }
+
+      function makeStick(zone, onMove, onEnd) {
+        const manager = nipplejs.create({
+          zone,
+          mode: 'static',
+          position: { left: '50%', top: '50%' },
+          size: Math.min(150, Math.max(92, Math.min(zone.clientWidth, zone.clientHeight) * .72)),
+          color: '#75ddff',
+          restJoystick: true
+        });
+        manager.on('move', (_event, data) => {
+          if (data?.vector) onMove(clamp(data.vector.x), clamp(data.vector.y));
+        });
+        manager.on('end', onEnd);
+        return manager;
+      }
+
+      const leftOutput = document.querySelector('#left-values');
+      const rightOutput = document.querySelector('#right-values');
+
+      requestAnimationFrame(() => {
+        makeStick(
+          document.querySelector('#left-stick'),
+          (x, y) => {
+            controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = y;
+            controlState.yaw = x;
+            leftOutput.value = `${stickMode === 'jp' ? 'P' : 'T'} ${y.toFixed(2)} · Y ${x.toFixed(2)}`;
+            sendControls();
+          },
+          () => {
+            controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = 0;
+            controlState.yaw = 0;
+            leftOutput.value = `${stickMode === 'jp' ? 'P' : 'T'} 0.00 · Y 0.00`;
+            sendControls(true);
+          }
+        );
+
+        makeStick(
+          document.querySelector('#right-stick'),
+          (x, y) => {
+            controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = y;
+            controlState.roll = x;
+            rightOutput.value = `${stickMode === 'jp' ? 'T' : 'P'} ${y.toFixed(2)} · R ${x.toFixed(2)}`;
+            sendControls();
+          },
+          () => {
+            controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = 0;
+            controlState.roll = 0;
+            rightOutput.value = `${stickMode === 'jp' ? 'T' : 'P'} 0.00 · R 0.00`;
+            sendControls(true);
+          }
+        );
+      });
+
+      modeButtons.us.addEventListener('click', () => setStickMode('us'));
+      modeButtons.jp.addEventListener('click', () => setStickMode('jp'));
+      setStickMode(stickMode);
+
+      document.querySelectorAll('[data-command]').forEach(button => {
+        button.addEventListener('click', () => sendCommand(button.dataset.command));
+      });
+      document.querySelector('#arm-button').addEventListener('click', () => sendCommand('arm'));
+
+      if (!peerId) {
+        document.querySelector('#missing-peer').classList.add('visible');
+        setStatus('缺少 Peer ID', 'error');
+        return;
+      }
+
+      const peer = new Peer();
+      peer.on('open', () => {
+        setStatus('正在連線…');
+        connection = peer.connect(peerId, { reliable: false, serialization: 'json' });
+        connection.on('open', () => {
+          setStatus('已連線', 'connected');
+          sendControls(true);
+        });
+        connection.on('data', data => {
+          if (data?.type !== 'telemetry') return;
+          document.querySelector('#altitude').textContent = `${Number(data.altitude).toFixed(1)}m`;
+          document.querySelector('#speed').textContent = `${Number(data.speed).toFixed(1)}m/s`;
+          document.querySelector('#heading').textContent = `${Math.round(Number(data.heading))}°`;
+          document.querySelector('#battery').textContent = `${Math.round(Number(data.battery))}%`;
+          const armButton = document.querySelector('#arm-button');
+          armButton.textContent = data.armed ? '鎖定馬達' : '解鎖馬達';
+        });
+        connection.on('close', () => setStatus('連線已中斷', 'error'));
+        connection.on('error', () => setStatus('連線錯誤', 'error'));
+      });
+      peer.on('error', error => {
+        console.error(error);
+        setStatus(`連線失敗：${error.type || 'unknown'}`, 'error');
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          Object.keys(controlState).forEach(key => { controlState[key] = 0; });
+          sendControls(true);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
