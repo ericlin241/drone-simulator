@@ -445,6 +445,9 @@
       sun.shadow.camera.right = 30;
       sun.shadow.camera.top = 30;
       sun.shadow.camera.bottom = -30;
+      sun.shadow.bias = -.00015;
+      sun.shadow.normalBias = .025;
+      sun.shadow.radius = 2;
       scene.add(sun);
 
       const ground = new THREE.Mesh(
@@ -468,6 +471,18 @@
         strip.position.set(x, y, z);
         scene.add(strip);
         return strip;
+      }
+
+      function groundSurface(x, z, width, depth, color, y = .01) {
+        const surface = new THREE.Mesh(
+          new THREE.PlaneGeometry(width, depth),
+          new THREE.MeshStandardMaterial({ color, roughness: .94, metalness: 0, side: THREE.DoubleSide })
+        );
+        surface.rotation.x = -Math.PI / 2;
+        surface.position.set(x, y, z);
+        surface.receiveShadow = true;
+        scene.add(surface);
+        return surface;
       }
 
       function rectangleLines(cx, cz, width, depth, color, thickness = .075, y = .02) {
@@ -559,7 +574,7 @@
       }
 
       // 15 m × 15 m 訓練場；雙圓相切的水平 8 字依使用者提供的 P1～P7 示意圖配置。
-      groundStrip(0, 0, 15, 15, 0x999c9e, .01);
+      groundSurface(0, 0, 15, 15, 0x999c9e, .01);
       rectangleLines(0, 0, 15, 15, white, .11, .028);
       groundStrip(0, 0, .07, 15, white, .03);
       groundStrip(0, .9, 15, .07, white, .03);
@@ -681,6 +696,30 @@
       drone.position.set(0, REST_Y, TAKEOFF_Z);
       drone.scale.setScalar(.35);
       scene.add(drone);
+
+      // 柔和的地面接觸陰影補足低空高度感；真實方向陰影仍由 DirectionalLight 計算。
+      const shadowCanvas = document.createElement('canvas');
+      shadowCanvas.width = 128;
+      shadowCanvas.height = 128;
+      const shadowContext = shadowCanvas.getContext('2d');
+      const shadowGradient = shadowContext.createRadialGradient(64, 64, 5, 64, 64, 62);
+      shadowGradient.addColorStop(0, 'rgba(0, 0, 0, .72)');
+      shadowGradient.addColorStop(.42, 'rgba(0, 0, 0, .35)');
+      shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      shadowContext.fillStyle = shadowGradient;
+      shadowContext.fillRect(0, 0, 128, 128);
+      const contactShadowMaterial = new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(shadowCanvas),
+        transparent: true,
+        opacity: .3,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      const contactShadow = new THREE.Mesh(new THREE.PlaneGeometry(1.35, 1.35), contactShadowMaterial);
+      contactShadow.rotation.x = -Math.PI / 2;
+      contactShadow.position.set(drone.position.x, .09, drone.position.z);
+      contactShadow.renderOrder = 2;
+      scene.add(contactShadow);
 
       const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x172331, metalness: .55, roughness: .3 });
       const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x40d7ff, emissive: 0x063a52, metalness: .35, roughness: .28 });
@@ -965,6 +1004,11 @@
         camera.lookAt(cameraTarget);
 
         const altitude = Math.max(0, drone.position.y - REST_Y);
+        const shadowSpread = 1 + Math.min(altitude, 8) * .1;
+        contactShadow.position.set(drone.position.x, .09, drone.position.z);
+        contactShadow.scale.setScalar(shadowSpread);
+        contactShadowMaterial.opacity = .3 * Math.exp(-altitude * .22);
+        contactShadow.visible = altitude < 13;
         altitudeElement.textContent = `${altitude.toFixed(1)} m`;
         batteryElement.textContent = `${Math.round(batteryLevel)}%`;
         batteryElement.style.color = batteryLevel < 20 ? '#ff6379' : '#e8f8ff';
