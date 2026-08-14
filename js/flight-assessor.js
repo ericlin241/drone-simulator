@@ -113,7 +113,111 @@ export class FlightAssessor extends EventTarget {
     return [columns.join(','), ...rows].join('\n');
   }
 
-  toJSON() {
-    return JSON.stringify({ exportedAt: new Date().toISOString(), targetAltitude: this.targetAltitude, result: this.snapshot(), samples: this.samples }, null, 2);
+  /**
+   * Build a self-contained top-down JPG report without external chart libraries.
+   * The course and recorded path share the same metric coordinate transform.
+   */
+  toJpegDataURL(width = 1600, height = 1000) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    const chart = { x: 80, y: 150, width: 1040, height: 760 };
+    const worldMin = -8;
+    const worldSize = 16;
+    const mapX = x => chart.x + (x - worldMin) / worldSize * chart.width;
+    const mapZ = z => chart.y + (z - worldMin) / worldSize * chart.height;
+
+    context.fillStyle = '#07111f';
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = '#eef7ff';
+    context.font = '700 40px system-ui, sans-serif';
+    context.fillText('Web Flight Lab · 水平 8 字飛行軌跡', 80, 70);
+    context.fillStyle = '#77dfff';
+    context.font = '20px ui-monospace, monospace';
+    context.fillText(`EXPORT ${new Date().toLocaleString('zh-TW')}`, 82, 108);
+
+    // Chart background and one-metre grid.
+    context.fillStyle = '#0c1c2c';
+    context.fillRect(chart.x, chart.y, chart.width, chart.height);
+    context.strokeStyle = 'rgba(174, 211, 232, .12)';
+    context.lineWidth = 1;
+    for (let metre = -8; metre <= 8; metre += 1) {
+      context.beginPath(); context.moveTo(mapX(metre), chart.y); context.lineTo(mapX(metre), chart.y + chart.height); context.stroke();
+      context.beginPath(); context.moveTo(chart.x, mapZ(metre)); context.lineTo(chart.x + chart.width, mapZ(metre)); context.stroke();
+    }
+    context.strokeStyle = 'rgba(238, 247, 255, .65)';
+    context.lineWidth = 3;
+    context.strokeRect(mapX(-7.5), mapZ(-7.5), mapX(7.5) - mapX(-7.5), mapZ(7.5) - mapZ(-7.5));
+
+    // Standard figure-eight reference route.
+    context.strokeStyle = '#24bde9';
+    context.lineWidth = 5;
+    context.setLineDash([14, 10]);
+    for (const cx of [-3.2, 3.2]) {
+      context.beginPath();
+      context.ellipse(mapX(cx), mapZ(-2.3), 3.2 / worldSize * chart.width, 3.2 / worldSize * chart.height, 0, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.setLineDash([]);
+
+    // P1-P7 detection points.
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.font = '700 18px system-ui, sans-serif';
+    this.waypoints.forEach((point, index) => {
+      context.beginPath(); context.fillStyle = '#f04d60'; context.arc(mapX(point.x), mapZ(point.y), 14, 0, Math.PI * 2); context.fill();
+      context.fillStyle = '#ffffff'; context.fillText(`P${index + 1}`, mapX(point.x), mapZ(point.y));
+    });
+
+    // Each segment uses its ending sample's altitude-error band.
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.lineWidth = 7;
+    for (let index = 1; index < this.samples.length; index += 1) {
+      const previous = this.samples[index - 1];
+      const sample = this.samples[index];
+      context.strokeStyle = sample.altitudeError < 0.5 ? '#42e69a' : sample.altitudeError > 0.8 ? '#ff5068' : '#ffd45a';
+      context.beginPath(); context.moveTo(mapX(previous.x), mapZ(previous.z)); context.lineTo(mapX(sample.x), mapZ(sample.z)); context.stroke();
+    }
+    if (this.samples.length) {
+      const endpoints = [this.samples[0], this.samples.at(-1)];
+      ['#ffffff', '#ff9b54'].forEach((color, index) => {
+        context.beginPath(); context.fillStyle = color; context.arc(mapX(endpoints[index].x), mapZ(endpoints[index].z), 11, 0, Math.PI * 2); context.fill();
+      });
+    }
+
+    // Summary panel and legend.
+    const result = this.snapshot();
+    const altitudes = this.samples.map(sample => sample.altitude);
+    const routeErrors = this.samples.map(sample => sample.routeError);
+    const average = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    const maximum = values => values.length ? Math.max(...values) : 0;
+    const summary = [
+      ['評分', `${result.score.toFixed(1)} / 100`],
+      ['結果', result.completed ? (result.passed ? 'PASS 合格' : 'FAIL 未通過') : '練習未完成'],
+      ['時間', `${result.time.toFixed(1)} s`],
+      ['軌跡點', `${this.samples.length}`],
+      ['平均高度', `${average(altitudes).toFixed(2)} m`],
+      ['最高高度', `${maximum(altitudes).toFixed(2)} m`],
+      ['平均路徑誤差', `${average(routeErrors).toFixed(2)} m`],
+      ['最大路徑誤差', `${maximum(routeErrors).toFixed(2)} m`]
+    ];
+    context.textAlign = 'left'; context.textBaseline = 'alphabetic';
+    context.fillStyle = '#10283c'; context.fillRect(1160, 150, 360, 760);
+    context.font = '700 26px system-ui, sans-serif'; context.fillStyle = '#77dfff'; context.fillText('FLIGHT SUMMARY', 1200, 205);
+    summary.forEach(([label, value], index) => {
+      const y = 260 + index * 62;
+      context.font = '17px system-ui, sans-serif'; context.fillStyle = '#8faabd'; context.fillText(label, 1200, y);
+      context.font = '700 22px ui-monospace, monospace'; context.fillStyle = '#eef7ff'; context.fillText(value, 1200, y + 28);
+    });
+    [['#42e69a', '高度誤差 < 0.5 m'], ['#ffd45a', '高度誤差 0.5–0.8 m'], ['#ff5068', '高度誤差 > 0.8 m']].forEach(([color, label], index) => {
+      const y = 800 + index * 32;
+      context.fillStyle = color; context.fillRect(1200, y - 14, 24, 8);
+      context.font = '15px system-ui, sans-serif'; context.fillStyle = '#b9ccda'; context.fillText(label, 1238, y - 4);
+    });
+    context.fillStyle = 'rgba(220, 237, 248, .62)'; context.font = '16px system-ui, sans-serif';
+    context.fillText('2026 ericlin241. All rights reserved.', 80, 960);
+    return canvas.toDataURL('image/jpeg', 0.92);
   }
 }

@@ -298,7 +298,7 @@
     <p class="assessment-error">路徑偏差：<strong id="assessment-error">0.00 m</strong></p>
     <div class="data-actions">
       <button id="download-csv" type="button">下載軌跡 CSV</button>
-      <button id="download-json" type="button">下載完整 JSON</button>
+      <button id="download-jpg" type="button">下載軌跡圖 JPG</button>
     </div>
   </section>
 
@@ -873,22 +873,30 @@
         assessmentUi.result.textContent = '依序通過 P1～P7；綠色軌跡代表高度誤差小於 0.5 m。';
       });
 
-      function downloadFlightData(format) {
+      function ensureFlightData() {
         if (!assessor.samples.length) {
           assessmentUi.result.textContent = '目前尚無軌跡資料，請先飛行後再下載。';
-          return;
+          return false;
         }
-        const content = format === 'csv' ? `\uFEFF${assessor.toCSV()}` : assessor.toJSON();
-        const blob = new Blob([content], { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8' });
+        return true;
+      }
+      function triggerDownload(href, extension) {
         const link = document.createElement('a');
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        link.href = URL.createObjectURL(blob);
-        link.download = `web-flight-lab-${stamp}.${format}`;
+        link.href = href;
+        link.download = `web-flight-lab-${stamp}.${extension}`;
         link.click();
-        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       }
-      document.querySelector('#download-csv').addEventListener('click', () => downloadFlightData('csv'));
-      document.querySelector('#download-json').addEventListener('click', () => downloadFlightData('json'));
+      document.querySelector('#download-csv').addEventListener('click', () => {
+        if (!ensureFlightData()) return;
+        const blobUrl = URL.createObjectURL(new Blob([`\uFEFF${assessor.toCSV()}`], { type: 'text/csv;charset=utf-8' }));
+        triggerDownload(blobUrl, 'csv');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      });
+      document.querySelector('#download-jpg').addEventListener('click', () => {
+        if (!ensureFlightData()) return;
+        triggerDownload(assessor.toJpegDataURL(), 'jpg');
+      });
 
       function spawnCrashDebris() {
         const material = new THREE.MeshStandardMaterial({ color: 0xff8f32, emissive: 0x5c1700, roughness: .7 });
