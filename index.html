@@ -203,8 +203,42 @@
     #assessment-result { margin: 8px 0 0; color: #b8cadd; font-size: .67rem; line-height: 1.45; }
     .data-actions { display: flex; gap: 6px; margin-top: 8px; }
     .data-actions button { padding: 7px 6px; font-size: .62rem; }
+    .guide-open-button { width: 100%; margin-top: 7px; padding: 7px; font-size: .62rem; }
     .assessment-error { margin: 5px 0 0; color: #91a7ba; font-size: .62rem; }
     .assessment-error strong { color: #dff7ff; font-family: ui-monospace, monospace; }
+
+    .assessment-guide {
+      position: fixed;
+      z-index: 30;
+      inset: 0;
+      overflow: auto;
+      padding: 34px clamp(22px, 5vw, 80px);
+      background: radial-gradient(circle at 78% 12%, rgba(34,151,196,.2), transparent 30%), linear-gradient(145deg, #071421, #030911);
+    }
+    .assessment-guide[hidden] { display: none; }
+    .guide-shell { width: min(1040px, 100%); margin: 0 auto; }
+    .guide-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .guide-toolbar .eyebrow { margin: 0; }
+    .guide-close { flex: 0 0 auto; padding: 8px 13px; }
+    .guide-title { margin: 24px 0 8px; font-size: clamp(1.7rem, 4vw, 3.2rem); letter-spacing: -.025em; }
+    .guide-lead { max-width: 760px; margin: 0 0 26px; color: #a9c0d1; font-size: .92rem; line-height: 1.75; }
+    .guide-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .guide-card { padding: 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: rgba(13,31,48,.72); }
+    .guide-card span { color: #70dfff; font: 700 .7rem ui-monospace, monospace; letter-spacing: .08em; }
+    .guide-card strong { display: block; margin: 8px 0 5px; color: #f0f8ff; font-size: 1.05rem; }
+    .guide-card p { margin: 0; color: #98afc1; font-size: .76rem; line-height: 1.65; }
+    .guide-section { margin-top: 26px; padding: 20px; border-radius: 18px; background: rgba(255,255,255,.035); }
+    .guide-section h3 { margin: 0 0 14px; font-size: .95rem; }
+    .waypoint-flow { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding-bottom: 5px; }
+    .waypoint-flow b { display: grid; flex: 0 0 46px; height: 46px; place-items: center; border: 1px solid rgba(255,91,111,.55); border-radius: 50%; color: #ff8998; background: rgba(129,26,44,.28); }
+    .waypoint-flow i { flex: 1 0 18px; height: 2px; background: #278fb5; }
+    .color-guide { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .color-guide div { padding: 12px; border-radius: 12px; color: #dcebf5; font-size: .74rem; }
+    .color-guide .green { background: rgba(66,230,154,.16); border: 1px solid rgba(66,230,154,.4); }
+    .color-guide .yellow { background: rgba(255,212,90,.14); border: 1px solid rgba(255,212,90,.4); }
+    .color-guide .red { background: rgba(255,80,104,.14); border: 1px solid rgba(255,80,104,.4); }
+    .guide-footer { display: flex; justify-content: center; margin: 28px 0 10px; }
+    .guide-footer button { flex: 0 0 auto; min-width: 210px; padding: 11px 18px; background: rgba(42,166,213,.24); }
 
     .copyright {
       position: fixed;
@@ -252,6 +286,8 @@
       .flight-card { display: none; }
       .course-badge { display: none; }
       .assessment-card { display: none; }
+      .assessment-guide { padding: 22px 16px; }
+      .guide-grid, .color-guide { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -300,6 +336,36 @@
     <div class="data-actions">
       <button id="download-csv" type="button">下載軌跡 CSV</button>
       <button id="download-jpg" type="button">下載軌跡圖 JPG</button>
+    </div>
+    <button id="assessment-guide-button" class="guide-open-button" type="button" aria-expanded="false" aria-controls="assessment-guide">評分說明</button>
+  </section>
+
+  <section id="assessment-guide" class="assessment-guide" role="dialog" aria-modal="true" aria-labelledby="guide-title" hidden>
+    <div class="guide-shell">
+      <div class="guide-toolbar">
+        <p class="eyebrow">FLIGHT ASSESSMENT GUIDE</p>
+        <button id="guide-close" class="guide-close" type="button" aria-label="縮小評分說明">縮小回模擬畫面 ✕</button>
+      </div>
+      <h2 id="guide-title" class="guide-title">水平 8 字評分說明</h2>
+      <p class="guide-lead">由 100 分開始，依序通過 P1～P7。系統每 50 ms 記錄位置與高度，只有超出寬鬆訓練容許範圍時才會逐步扣分；完成全部航點且保有 60 分即為合格。</p>
+      <div class="guide-grid">
+        <article class="guide-card"><span>ROUTE</span><strong>航線容許 1.5 m</strong><p>距離標準雙圓路線超過 1.5 m 後才開始緩慢扣分。</p></article>
+        <article class="guide-card"><span>ALTITUDE</span><strong>高度容許 ±0.5 m</strong><p>以 3 m 為目標高度，偏差超過 0.5 m 後才開始扣分。</p></article>
+        <article class="guide-card"><span>PASS</span><strong>60 分以上合格</strong><p>通過 P7 後自動結算完成時間、最終分數與合格結果。</p></article>
+      </div>
+      <section class="guide-section">
+        <h3>航點順序 · 每點檢測半徑 1.4 m</h3>
+        <div class="waypoint-flow" aria-label="P1 到 P7 航點順序"><b>P1</b><i></i><b>P2</b><i></i><b>P3</b><i></i><b>P4</b><i></i><b>P5</b><i></i><b>P6</b><i></i><b>P7</b></div>
+      </section>
+      <section class="guide-section">
+        <h3>軌跡顏色代表高度誤差</h3>
+        <div class="color-guide"><div class="green">綠色：誤差小於 0.5 m</div><div class="yellow">黃色：誤差 0.5～0.8 m</div><div class="red">紅色：誤差大於 0.8 m</div></div>
+      </section>
+      <section class="guide-section">
+        <h3>飛行後下載</h3>
+        <p class="guide-lead">CSV 提供逐點數據分析；JPG 會生成標準航線、彩色實飛軌跡、起終點及成績摘要，可直接分享或列印。重設位置前請先下載需要保留的資料。</p>
+      </section>
+      <div class="guide-footer"><button id="guide-minimize" type="button">縮小回模擬畫面</button></div>
     </div>
   </section>
 
@@ -872,6 +938,30 @@
       assessmentUi.button.addEventListener('click', () => {
         assessor.start(); assessmentUi.button.textContent = '評分中';
         assessmentUi.result.textContent = '依序通過 P1～P7；綠色軌跡代表高度誤差小於 0.5 m。';
+      });
+
+      const assessmentGuide = document.querySelector('#assessment-guide');
+      const guideButton = document.querySelector('#assessment-guide-button');
+      const guideCloseButton = document.querySelector('#guide-close');
+      const guideMinimizeButton = document.querySelector('#guide-minimize');
+      function openAssessmentGuide() {
+        assessmentGuide.hidden = false;
+        guideButton.setAttribute('aria-expanded', 'true');
+        guideCloseButton.focus();
+      }
+      function closeAssessmentGuide() {
+        assessmentGuide.hidden = true;
+        guideButton.setAttribute('aria-expanded', 'false');
+        guideButton.focus();
+      }
+      guideButton.addEventListener('click', openAssessmentGuide);
+      guideCloseButton.addEventListener('click', closeAssessmentGuide);
+      guideMinimizeButton.addEventListener('click', closeAssessmentGuide);
+      assessmentGuide.addEventListener('click', event => {
+        if (event.target === assessmentGuide) closeAssessmentGuide();
+      });
+      addEventListener('keydown', event => {
+        if (event.code === 'Escape' && !assessmentGuide.hidden) closeAssessmentGuide();
       });
 
       function ensureFlightData() {
