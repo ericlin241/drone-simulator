@@ -183,6 +183,49 @@
     }
     .course-badge strong { display: block; color: #6edcff; font-size: .76rem; }
 
+    .settings-panel {
+      position: fixed;
+      z-index: 4;
+      top: 205px;
+      left: 20px;
+      width: min(360px, calc(100vw - 40px));
+      max-height: calc(100vh - 290px);
+      overflow: auto;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 16px;
+      background: rgba(5,15,28,.82);
+      backdrop-filter: blur(16px);
+    }
+    .settings-panel summary { color: #dff7ff; font-size: .78rem; font-weight: 800; cursor: pointer; }
+    .preset-row, .segmented { display: flex; gap: 6px; margin: 10px 0; }
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    .settings-grid label { color: #8fa8bc; font-size: .65rem; }
+    .settings-grid output { float: right; color: #6edcff; font-family: ui-monospace, monospace; }
+    .settings-grid input { width: 100%; margin: 5px 0 0; accent-color: #43c8f2; }
+    .settings-panel button.active { border-color: #58d9ff; background: rgba(54,190,234,.28); }
+    .environment-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 9px; }
+    .environment-row label { color: #8fa8bc; font-size: .65rem; }
+    .environment-row input { width: 100%; accent-color: #64dfb1; }
+
+    .assessment-card {
+      position: fixed;
+      z-index: 3;
+      right: 20px;
+      top: 92px;
+      width: 250px;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 16px;
+      background: rgba(5,15,28,.76);
+      backdrop-filter: blur(14px);
+    }
+    .assessment-head { display: flex; justify-content: space-between; color: #8ba4b8; font-size: .64rem; }
+    .assessment-score { margin: 5px 0; color: #5be3a7; font: 800 1.45rem ui-monospace, monospace; }
+    .assessment-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; color: #91a7ba; font-size: .6rem; }
+    .assessment-meta strong { display: block; color: #e5f6ff; font-family: ui-monospace, monospace; }
+    #assessment-result { margin: 8px 0 0; color: #b8cadd; font-size: .67rem; line-height: 1.45; }
+
     .crash-overlay {
       position: fixed;
       z-index: 10;
@@ -214,6 +257,8 @@
       .telemetry { right: 10px; bottom: 10px; left: 10px; }
       .flight-card { display: none; }
       .course-badge { display: none; }
+      .settings-panel { top: 196px; max-height: 42vh; }
+      .assessment-card { display: none; }
     }
   </style>
 </head>
@@ -230,10 +275,35 @@
       </p>
     </div>
     <div class="desktop-actions">
-      <button id="camera-button" type="button">相機：追蹤</button>
+      <button id="camera-button" type="button">相機：追隨</button>
+      <button id="flight-mode-button" type="button">模式：自穩</button>
       <button id="reset-button" type="button">重設位置</button>
     </div>
   </section>
+
+  <details id="rate-panel" class="settings-panel">
+    <summary>遙控調校、速度限制與風場</summary>
+    <div class="preset-row">
+      <button type="button" data-preset="beginner">新手</button>
+      <button type="button" data-preset="standard">標準</button>
+      <button type="button" data-preset="racing">競速</button>
+    </div>
+    <div class="segmented">
+      <button type="button" data-stick-mode="mode2">美國手 Mode 2</button>
+      <button type="button" data-stick-mode="mode1">日本手 Mode 1</button>
+    </div>
+    <div class="settings-grid">
+      <label>最大速度 <output data-output="maxSpeedScale"></output><input data-config="maxSpeedScale" type="range" min="0.1" max="1" step="0.05"></label>
+      <label>油門上限 <output data-output="throttleCap"></output><input data-config="throttleCap" type="range" min="0.1" max="1" step="0.05"></label>
+      <label>RC Rate <output data-output="rcRate"></output><input data-config="rcRate" type="range" min="0.1" max="2" step="0.05"></label>
+      <label>Expo <output data-output="expo"></output><input data-config="expo" type="range" min="0" max="1" step="0.05"></label>
+      <label>Deadband <output data-output="deadband"></output><input data-config="deadband" type="range" min="0" max="0.2" step="0.01"></label>
+    </div>
+    <div class="environment-row">
+      <label>風速 <output id="wind-speed-value">2.0 m/s</output><input id="wind-speed" type="range" min="0" max="12" step="0.5" value="2"></label>
+      <label>風向 <output id="wind-direction-value">35°</output><input id="wind-direction" type="range" min="0" max="359" step="1" value="35"></label>
+    </div>
+  </details>
 
   <section class="flight-card" aria-label="飛行資訊">
     <div><span>FLIGHT</span><strong id="flight-state">未解鎖</strong></div>
@@ -248,6 +318,17 @@
     <div class="meter"><span>Roll</span><strong id="t-roll">0.00</strong></div>
   </section>
 
+  <section class="assessment-card" aria-live="polite">
+    <div class="assessment-head"><span>水平 8 字考照</span><button id="assessment-button" type="button">開始評分</button></div>
+    <div id="assessment-score" class="assessment-score">100.0</div>
+    <div class="assessment-meta">
+      <span>航點<strong id="assessment-waypoint">P1 / P7</strong></span>
+      <span>時間<strong id="assessment-time">0.0 s</strong></span>
+      <span>偏差<strong id="assessment-error">0.00 m</strong></span>
+    </div>
+    <p id="assessment-result">起飛後按「開始評分」，依序通過 P1～P7。</p>
+  </section>
+
   <aside class="course-badge"><strong>水平 8 字訓練場 · P1～P7</strong>15 m × 15 m · 左鍵平移 · 右鍵環繞 · 滾輪縮放</aside>
   <div id="crash-overlay" class="crash-overlay" aria-live="assertive">
     <div class="crash-message"><strong>FLIGHT TERMINATED</strong><span id="crash-reason">發生碰撞，請重設位置</span></div>
@@ -256,7 +337,12 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script>
+  <script type="module">
+    import { RateConfig, bindRatePanel } from './js/rate-config.js';
+    import { InputManager } from './js/input-manager.js';
+    import { PhysicsEngine, FlightMode } from './js/physics-engine.js';
+    import { FlightAssessor } from './js/flight-assessor.js';
+    import { CameraController } from './js/camera-controller.js';
     (() => {
       'use strict';
 
@@ -269,14 +355,15 @@
         pitch: document.querySelector('#t-pitch'),
         roll: document.querySelector('#t-roll')
       };
-      const controls = { throttle: 0, yaw: 0, pitch: 0, roll: 0 };
+      const rateConfig = new RateConfig();
+      let inputManager;
+      const controls = { throttle: 0.5, yaw: 0, pitch: 0, roll: 0 };
       const flightStateElement = document.querySelector('#flight-state');
       const altitudeElement = document.querySelector('#altitude');
       const batteryElement = document.querySelector('#battery');
       let armed = false;
       let autoFlight = null;
       let batteryLevel = 100;
-      let cameraMode = 0;
       let lastTelemetryAt = 0;
       let crashed = false;
       let crashEventId = 0;
@@ -301,15 +388,16 @@
       const TAKEOFF_Z = 2.5;
 
       function resetDrone() {
-        drone.position.set(0, REST_Y, TAKEOFF_Z);
-        drone.rotation.set(0, 0, 0);
-        velocity.set(0, 0, 0);
+        physicsEngine.reset(new THREE.Vector3(0, REST_Y, TAKEOFF_Z));
         yawAngle = 0;
         autoFlight = null;
         armed = false;
         crashed = false;
         crashReason = '';
         crashSpin.set(0, 0, 0);
+        assessor.reset();
+        assessmentUi.button.textContent = '開始評分';
+        assessmentUi.result.textContent = '起飛後按「開始評分」，依序通過 P1～P7。';
         document.querySelector('#crash-overlay').classList.remove('visible');
         setFlightState('未解鎖', '#ffca62');
       }
@@ -355,7 +443,7 @@
           case 'emergency':
             armed = false;
             autoFlight = null;
-            Object.keys(controls).forEach(key => { controls[key] = 0; });
+            Object.assign(controls, { throttle: 0.5, yaw: 0, pitch: 0, roll: 0 });
             velocity.set(0, 0, 0);
             setFlightState('緊急停止', '#ff6379');
             break;
@@ -364,6 +452,11 @@
             break;
         }
       }
+
+      inputManager = new InputManager(rateConfig, handleCommand);
+      bindRatePanel(document.querySelector('#rate-panel'), rateConfig, values => {
+        if (activeConnection?.open) activeConnection.send({ type: 'config', values });
+      });
 
       function randomPeerId() {
         if (crypto.randomUUID) return `drone-${crypto.randomUUID()}`;
@@ -404,14 +497,15 @@
             handleCommand(data.command);
             return;
           }
-          const source = data.type === 'controls' ? data.values : data;
-          for (const key of Object.keys(controls)) {
-            controls[key] = clampInput(source?.[key]);
-            telemetry[key].textContent = controls[key].toFixed(2);
+          if (data.type === 'config') {
+            rateConfig.set(data.values || {});
+            return;
           }
+          const source = data.type === 'controls' ? data.values : data;
+          inputManager.setRemote(source);
         });
         connection.on('close', () => {
-          Object.keys(controls).forEach(key => { controls[key] = 0; });
+          inputManager.setRemote({ throttle: 0.5, yaw: 0, pitch: 0, roll: 0 });
           setStatus('連線已中斷，等待重新連線…');
         });
         connection.on('error', () => setStatus('遙控器連線發生錯誤', 'error'));
@@ -756,16 +850,60 @@
       });
 
       const clock = new THREE.Clock();
-      const velocity = new THREE.Vector3();
-      const forward = new THREE.Vector3();
-      const right = new THREE.Vector3();
-      const cameraTarget = new THREE.Vector3();
-      const freeCameraTarget = new THREE.Vector3();
-      let freeCameraYaw = 0;
-      let freeCameraPitch = .45;
-      let freeCameraDistance = 16;
-      let cameraDragButton = -1;
+      const physicsEngine = new PhysicsEngine(THREE, drone, { restY: REST_Y });
+      const velocity = physicsEngine.velocity;
       let yawAngle = 0;
+      const cameraController = new CameraController(THREE, camera, renderer.domElement, drone);
+      const assessor = new FlightAssessor(THREE, scene, { targetAltitude: 3 });
+
+      const flightModeLabels = { [FlightMode.ANGLE]: '自穩', [FlightMode.ACRO]: '特技', [FlightMode.ALT_HOLD]: '定高' };
+      const renderFlightMode = (mode = physicsEngine.mode) => {
+        document.querySelector('#flight-mode-button').textContent = `模式：${flightModeLabels[mode]}`;
+      };
+      const cycleFlightMode = () => renderFlightMode(physicsEngine.cycleMode());
+      document.querySelector('#flight-mode-button').addEventListener('click', cycleFlightMode);
+      inputManager.addEventListener('cycle-flight-mode', cycleFlightMode);
+
+      const renderCameraMode = (mode = cameraController.mode) => {
+        document.querySelector('#camera-button').textContent = `相機：${mode}`;
+      };
+      cameraController.addEventListener('modechange', event => renderCameraMode(event.detail));
+      inputManager.addEventListener('cycle-camera', () => cameraController.cycle());
+      document.querySelector('#camera-button').addEventListener('click', () => cameraController.cycle());
+
+      const windSpeedInput = document.querySelector('#wind-speed');
+      const windDirectionInput = document.querySelector('#wind-direction');
+      function updateWind() {
+        physicsEngine.setWind(windSpeedInput.value, windDirectionInput.value);
+        document.querySelector('#wind-speed-value').textContent = `${Number(windSpeedInput.value).toFixed(1)} m/s`;
+        document.querySelector('#wind-direction-value').textContent = `${windDirectionInput.value}°`;
+      }
+      windSpeedInput.addEventListener('input', updateWind);
+      windDirectionInput.addEventListener('input', updateWind);
+      updateWind();
+
+      const assessmentUi = {
+        score: document.querySelector('#assessment-score'), waypoint: document.querySelector('#assessment-waypoint'),
+        time: document.querySelector('#assessment-time'), error: document.querySelector('#assessment-error'),
+        result: document.querySelector('#assessment-result'), button: document.querySelector('#assessment-button')
+      };
+      function renderAssessment(result) {
+        assessmentUi.score.textContent = result.score.toFixed(1);
+        assessmentUi.score.style.color = result.score >= 70 ? '#5be3a7' : '#ff6379';
+        assessmentUi.waypoint.textContent = `P${result.waypoint} / P7`;
+        assessmentUi.time.textContent = `${result.time.toFixed(1)} s`;
+        assessmentUi.error.textContent = `${result.routeError.toFixed(2)} m`;
+      }
+      assessor.addEventListener('update', event => renderAssessment(event.detail));
+      assessor.addEventListener('finish', event => {
+        renderAssessment(event.detail);
+        assessmentUi.result.textContent = `${event.detail.passed ? '合格 PASS' : '不合格 FAIL'} · ${event.detail.time.toFixed(1)} 秒 · ${event.detail.score.toFixed(1)} 分`;
+        assessmentUi.button.textContent = '重新評分';
+      });
+      assessmentUi.button.addEventListener('click', () => {
+        assessor.start(); assessmentUi.button.textContent = '評分中';
+        assessmentUi.result.textContent = '依序通過 P1～P7；綠色軌跡代表高度誤差小於 0.3 m。';
+      });
 
       function spawnCrashDebris() {
         const material = new THREE.MeshStandardMaterial({ color: 0xff8f32, emissive: 0x5c1700, roughness: .7 });
@@ -819,73 +957,18 @@
         return '';
       }
 
-      const cameraLabels = ['追蹤', '環繞', '俯視'];
-      document.querySelector('#camera-button').addEventListener('click', event => {
-        cameraMode = cameraMode === 3 ? 0 : (cameraMode + 1) % cameraLabels.length;
-        event.currentTarget.textContent = `相機：${cameraLabels[cameraMode]}`;
-      });
       document.querySelector('#reset-button').addEventListener('click', resetDrone);
-
-      function enableFreeCamera() {
-        if (cameraMode === 3) return;
-        freeCameraTarget.copy(drone.position);
-        const offset = camera.position.clone().sub(freeCameraTarget);
-        freeCameraDistance = THREE.MathUtils.clamp(offset.length(), 3, 55);
-        freeCameraPitch = THREE.MathUtils.clamp(Math.asin(offset.y / freeCameraDistance), .12, 1.42);
-        freeCameraYaw = Math.atan2(offset.x, offset.z);
-        cameraMode = 3;
-        document.querySelector('#camera-button').textContent = '相機：自由';
-      }
-
-      renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
-      renderer.domElement.addEventListener('pointerdown', event => {
-        if (event.button !== 0 && event.button !== 2) return;
-        enableFreeCamera();
-        cameraDragButton = event.button;
-        renderer.domElement.classList.add('dragging');
-        renderer.domElement.setPointerCapture(event.pointerId);
-        event.preventDefault();
-      });
-      renderer.domElement.addEventListener('pointermove', event => {
-        if (cameraDragButton < 0) return;
-        if (cameraDragButton === 2) {
-          freeCameraYaw -= event.movementX * .006;
-          freeCameraPitch = THREE.MathUtils.clamp(freeCameraPitch + event.movementY * .0045, .12, 1.42);
-        } else {
-          const moveScale = freeCameraDistance * .0018;
-          const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-          cameraRight.y = 0;
-          cameraRight.normalize();
-          const cameraForward = new THREE.Vector3();
-          camera.getWorldDirection(cameraForward);
-          cameraForward.y = 0;
-          cameraForward.normalize();
-          freeCameraTarget.addScaledVector(cameraRight, -event.movementX * moveScale);
-          freeCameraTarget.addScaledVector(cameraForward, event.movementY * moveScale);
-        }
-        event.preventDefault();
-      });
-      function endCameraDrag(event) {
-        cameraDragButton = -1;
-        renderer.domElement.classList.remove('dragging');
-        if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
-      }
-      renderer.domElement.addEventListener('pointerup', endCameraDrag);
-      renderer.domElement.addEventListener('pointercancel', endCameraDrag);
-      renderer.domElement.addEventListener('wheel', event => {
-        enableFreeCamera();
-        freeCameraDistance = THREE.MathUtils.clamp(freeCameraDistance * Math.exp(event.deltaY * .001), 3, 55);
-        event.preventDefault();
-      }, { passive: false });
 
       function animate() {
         requestAnimationFrame(animate);
         const dt = Math.min(clock.getDelta(), .05);
 
         updateCrashDebris(dt);
+        Object.assign(controls, inputManager.update());
+        for (const key of Object.keys(telemetry)) telemetry[key].textContent = controls[key].toFixed(2);
 
         if (armed && !crashed && batteryLevel > 0) {
-          batteryLevel = Math.max(0, batteryLevel - dt * (.018 + Math.abs(controls.throttle) * .022));
+          batteryLevel = Math.max(0, batteryLevel - dt * (.018 + controls.throttle * .022));
         }
         if (!crashed && batteryLevel <= 0) {
           armed = false;
@@ -893,9 +976,9 @@
           setFlightState('低電量降落', '#ff6379');
         }
 
-        let verticalControl = armed && !crashed ? controls.throttle : 0;
+        let verticalControl = armed && !crashed ? controls.throttle : .5;
         if (autoFlight === 'takeoff') {
-          verticalControl = drone.position.y < REST_Y + 3 ? .52 : 0;
+          verticalControl = drone.position.y < REST_Y + 3 ? .82 : .5;
           if (drone.position.y >= REST_Y + 3) {
             drone.position.y = REST_Y + 3;
             velocity.y = 0;
@@ -903,7 +986,7 @@
             setFlightState('懸停', '#55e7aa');
           }
         } else if (autoFlight === 'land') {
-          verticalControl = drone.position.y > REST_Y + .04 ? -.32 : 0;
+          verticalControl = drone.position.y > REST_Y + .04 ? .3 : .5;
           if (drone.position.y <= REST_Y + .04) {
             drone.position.y = REST_Y;
             velocity.y = 0;
@@ -913,45 +996,15 @@
           }
         }
 
-        const activeYaw = armed && !crashed ? controls.yaw : 0;
-        const activePitch = armed && !crashed ? controls.pitch : 0;
-        const activeRoll = armed && !crashed ? controls.roll : 0;
-        // Three.js 的 Y 軸正旋轉是向左；反轉輸入，讓遙控器右旋對應機頭順時針向右。
-        yawAngle -= activeYaw * 1.35 * dt;
-        // 機頭朝本地 -Z；前進時使用負 X 軸旋轉，讓機頭下沉、機尾抬高。
-        const targetPitch = -activePitch * .3;
-        const targetRoll = -activeRoll * .36;
         if (crashed) {
           drone.rotation.x += crashSpin.x * dt;
-          drone.rotation.y += crashSpin.y * dt;
           drone.rotation.z += crashSpin.z * dt;
           crashSpin.multiplyScalar(Math.exp(-1.2 * dt));
-        } else {
-          drone.rotation.y = yawAngle;
-          drone.rotation.x = THREE.MathUtils.lerp(drone.rotation.x, targetPitch, 1 - Math.exp(-6 * dt));
-          drone.rotation.z = THREE.MathUtils.lerp(drone.rotation.z, targetRoll, 1 - Math.exp(-6 * dt));
         }
-
-        forward.set(-Math.sin(yawAngle), 0, -Math.cos(yawAngle));
-        right.set(Math.cos(yawAngle), 0, -Math.sin(yawAngle));
-        if (!crashed) {
-          velocity.addScaledVector(forward, activePitch * 5.4 * dt);
-          velocity.addScaledVector(right, activeRoll * 5.4 * dt);
-          velocity.y += verticalControl * 6.2 * dt;
-          velocity.multiplyScalar(Math.exp(-2.35 * dt));
-          const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
-          if (horizontalSpeed > 4.8) {
-            const scale = 4.8 / horizontalSpeed;
-            velocity.x *= scale;
-            velocity.z *= scale;
-          }
-        } else {
-          velocity.y -= 7.2 * dt;
-          velocity.x *= Math.exp(-.65 * dt);
-          velocity.z *= Math.exp(-.65 * dt);
-        }
-        drone.position.addScaledVector(velocity, dt);
-        drone.position.y = Math.min(15 + REST_Y, drone.position.y);
+        const physics = physicsEngine.update(dt, { ...controls, throttle: verticalControl }, {
+          armed: armed || Boolean(autoFlight), crashed, maxSpeedScale: rateConfig.values.maxSpeedScale
+        });
+        yawAngle = physics.yaw;
 
         if (!crashed) {
           const collisionName = findCollision();
@@ -970,38 +1023,13 @@
         }
 
         rotors.forEach((rotor, index) => {
-          const rotorSpeed = armed && !crashed ? 22 + Math.abs(verticalControl) * 30 : 1;
+          const rotorSpeed = armed && !crashed ? 22 + verticalControl * 30 : 1;
           rotor.rotation.y += (index % 2 ? -1 : 1) * rotorSpeed * dt;
         });
 
         const elapsed = clock.elapsedTime;
-        const cameraFocus = cameraMode === 3 ? freeCameraTarget : drone.position;
-        cameraTarget.copy(cameraFocus);
-        let cameraOffset;
-        if (cameraMode === 1) {
-          cameraOffset = new THREE.Vector3(Math.sin(elapsed * .18) * 15, 7.5, Math.cos(elapsed * .18) * 15);
-        } else if (cameraMode === 2) {
-          cameraOffset = new THREE.Vector3(.01, 18, .01);
-        } else if (cameraMode === 3) {
-          const horizontalDistance = Math.cos(freeCameraPitch) * freeCameraDistance;
-          cameraOffset = new THREE.Vector3(
-            Math.sin(freeCameraYaw) * horizontalDistance,
-            Math.sin(freeCameraPitch) * freeCameraDistance,
-            Math.cos(freeCameraYaw) * horizontalDistance
-          );
-        } else {
-          cameraOffset = new THREE.Vector3(10, 6.5, 13).applyAxisAngle(new THREE.Vector3(0, 1, 0), yawAngle * .18);
-        }
-        const desiredCamera = cameraOffset.add(cameraFocus);
-        if (crashed && Date.now() - crashEventId < 900) {
-          desiredCamera.add(new THREE.Vector3(
-            (Math.random() - .5) * .22,
-            (Math.random() - .5) * .16,
-            (Math.random() - .5) * .22
-          ));
-        }
-        camera.position.lerp(desiredCamera, 1 - Math.exp(-2.4 * dt));
-        camera.lookAt(cameraTarget);
+        cameraController.update(dt, crashed && Date.now() - crashEventId < 900);
+        assessor.update(dt, drone.position, armed);
 
         const altitude = Math.max(0, drone.position.y - REST_Y);
         const shadowSpread = 1 + Math.min(altitude, 8) * .1;
@@ -1023,7 +1051,11 @@
             armed,
             flightState: flightStateElement.textContent,
             crashEvent: crashEventId,
-            crashReason
+            crashReason,
+            flightMode: physicsEngine.mode,
+            inputSource: inputManager.lastSource,
+            windSpeed: physics.wind.length(),
+            assessment: assessor.snapshot()
           });
           lastTelemetryAt = elapsed;
         }

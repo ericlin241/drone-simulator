@@ -211,6 +211,31 @@
     }
     .feedback-toast.visible { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
+    .tuning-drawer {
+      position: absolute;
+      z-index: 15;
+      top: 62px;
+      right: max(18px, env(safe-area-inset-right));
+      width: min(330px, 45vw);
+      max-height: calc(100% - 74px);
+      overflow: auto;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 15px;
+      background: rgba(4,14,24,.94);
+      box-shadow: 0 18px 55px rgba(0,0,0,.45);
+    }
+    .tuning-drawer summary { color: #dff7ff; font-size: .7rem; font-weight: 800; cursor: pointer; }
+    .tuning-presets, .tuning-modes { display: flex; gap: 5px; margin: 8px 0; }
+    .tuning-drawer button { flex: 1; padding: 6px; border: 1px solid rgba(91,210,250,.2); border-radius: 8px; background: rgba(42,143,181,.1); color: #cceeff; font: 700 .58rem inherit; }
+    .tuning-drawer button.active { border-color: #66ddff; background: rgba(42,166,213,.36); }
+    .tuning-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px; }
+    .tuning-grid label { color: #8fa8bc; font-size: .55rem; }
+    .tuning-grid output { float: right; color: #70dfff; font-family: ui-monospace, monospace; }
+    .tuning-grid input { width: 100%; height: 16px; accent-color: #47c8f3; touch-action: manipulation; }
+    .haptic-toggle { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: #a9bdcc; font-size: .58rem; }
+    .haptic-toggle input { accent-color: #4ddca6; }
+
     .telemetry-strip {
       position: absolute;
       z-index: 3;
@@ -336,9 +361,7 @@
         <button class="command-button" type="button" data-command="land">自動降落</button>
         <button class="command-button" type="button" data-command="reset">重設位置</button>
         <button class="command-button danger" type="button" data-command="emergency">緊急停止</button>
-        <label class="sensitivity-control">靈敏度 <output id="sensitivity-value">65%</output>
-          <input id="sensitivity" type="range" min="35" max="100" step="5" value="65" aria-label="搖桿靈敏度">
-        </label>
+        <div class="sensitivity-control">調校面板可設定 Rate／速度／Expo／死區</div>
       </nav>
 
       <div class="stick-panel">
@@ -354,6 +377,20 @@
     <p id="gesture-hint" class="gesture-hint">雙桿往內下壓並保持 0.8 秒可解鎖</p>
     <div id="feedback-toast" class="feedback-toast" role="alert"></div>
 
+    <details id="rate-panel" class="tuning-drawer">
+      <summary>⚙ 遙控器調校與震動回饋</summary>
+      <div class="tuning-presets"><button type="button" data-preset="beginner">新手</button><button type="button" data-preset="standard">標準</button><button type="button" data-preset="racing">競速</button></div>
+      <div class="tuning-modes"><button type="button" data-stick-mode="mode2">美國手 Mode 2</button><button type="button" data-stick-mode="mode1">日本手 Mode 1</button></div>
+      <div class="tuning-grid">
+        <label>最大速度 <output data-output="maxSpeedScale"></output><input data-config="maxSpeedScale" type="range" min="0.1" max="1" step="0.05"></label>
+        <label>油門上限 <output data-output="throttleCap"></output><input data-config="throttleCap" type="range" min="0.1" max="1" step="0.05"></label>
+        <label>RC Rate <output data-output="rcRate"></output><input data-config="rcRate" type="range" min="0.1" max="2" step="0.05"></label>
+        <label>Expo <output data-output="expo"></output><input data-config="expo" type="range" min="0" max="1" step="0.05"></label>
+        <label>Deadband <output data-output="deadband"></output><input data-config="deadband" type="range" min="0" max="0.2" step="0.01"></label>
+      </div>
+      <label class="haptic-toggle"><input id="haptic-enabled" type="checkbox" checked> 啟用分級震動（高輸出、航點、扣分、墜機）</label>
+    </details>
+
     <div id="missing-peer" class="missing-peer">
       <p>網址中缺少 Peer ID。<br>請回到電腦端首頁，重新掃描 QR Code 開啟遙控器。</p>
     </div>
@@ -361,19 +398,19 @@
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
-  <script>
+  <script type="module">
+    import { RateConfig, bindRatePanel } from './js/rate-config.js';
     (() => {
       'use strict';
 
       const peerId = new URLSearchParams(location.search).get('peer');
       const statusElement = document.querySelector('#status');
-      const controlState = { throttle: 0, yaw: 0, pitch: 0, roll: 0 };
+      const controlState = { throttle: 0.5, yaw: 0, pitch: 0, roll: 0 };
       const modeButtons = {
         us: document.querySelector('#mode-us'),
         jp: document.querySelector('#mode-jp')
       };
-      const sensitivityInput = document.querySelector('#sensitivity');
-      const sensitivityValue = document.querySelector('#sensitivity-value');
+      const rateConfig = new RateConfig();
       const physicalSticks = {
         left: { x: 0, y: 0 },
         right: { x: 0, y: 0 }
@@ -383,15 +420,28 @@
         right: { x: 0, y: 0, active: false }
       };
       const gestureTouches = new Map();
-      let stickMode = localStorage.getItem('drone-stick-mode') === 'jp' ? 'jp' : 'us';
-      let sensitivity = Number(localStorage.getItem('drone-sensitivity')) || 65;
+      let stickMode = rateConfig.values.stickMode === 'mode1' ? 'jp' : 'us';
       let remoteArmed = false;
       let gestureStartedAt = 0;
       let gestureCooldownUntil = 0;
       let rawGestureTimer = 0;
       let lastCrashEvent = 0;
+      let lastWaypoint = 1;
+      let lastScoreBand = 100;
+      let highOutputLatched = false;
       let connection = null;
       let lastSent = '';
+      const hapticEnabled = document.querySelector('#haptic-enabled');
+      hapticEnabled.checked = localStorage.getItem('drone-haptics') !== 'off';
+      hapticEnabled.addEventListener('change', () => localStorage.setItem('drone-haptics', hapticEnabled.checked ? 'on' : 'off'));
+
+      const HAPTICS = Object.freeze({
+        arm: [45, 35, 75], disarm: 45, command: 30, waypoint: [25, 35, 25],
+        penalty: [55, 45, 55], complete: [45, 35, 45, 35, 120], crash: [180, 80, 180, 80, 260], high: 18
+      });
+      function vibrate(pattern) {
+        if (hapticEnabled.checked && navigator.vibrate) navigator.vibrate(pattern);
+      }
 
       function setStatus(message, type = '') {
         statusElement.textContent = message;
@@ -402,17 +452,9 @@
         return Math.max(-1, Math.min(1, Number(value) || 0));
       }
 
-      function shapeAxis(value) {
-        const deadzone = .11;
-        const magnitude = Math.abs(clamp(value));
-        if (magnitude <= deadzone) return 0;
-        const normalized = (magnitude - deadzone) / (1 - deadzone);
-        return Math.sign(value) * Math.pow(normalized, 1.45) * (sensitivity / 100);
-      }
-
       function shapePair(x, y) {
-        let shapedX = shapeAxis(x);
-        let shapedY = shapeAxis(y);
+        let shapedX = clamp(x);
+        let shapedY = clamp(y);
         // 初學者軸向輔助：主方向推得明確時，濾除小幅度的斜推誤差。
         if (Math.abs(y) > .28 && Math.abs(x) < .22) shapedX = 0;
         if (Math.abs(x) > .28 && Math.abs(y) < .22) shapedY = 0;
@@ -426,12 +468,15 @@
           connection.send({ type: 'controls', values: { ...controlState }, stickMode });
           lastSent = payload;
         }
+        const highOutput = Math.max(Math.abs(controlState.yaw), Math.abs(controlState.pitch), Math.abs(controlState.roll), Math.abs(controlState.throttle - .5) * 2) > .88;
+        if (highOutput && !highOutputLatched) vibrate(HAPTICS.high);
+        highOutputLatched = highOutput;
       }
 
       function sendCommand(command) {
         if (!connection?.open) return;
         connection.send({ type: 'command', command });
-        if (navigator.vibrate) navigator.vibrate(command === 'emergency' ? [80, 40, 120] : 35);
+        vibrate(command === 'emergency' ? HAPTICS.crash : command === 'arm' ? (remoteArmed ? HAPTICS.disarm : HAPTICS.arm) : HAPTICS.command);
       }
 
       function showFeedback(message) {
@@ -537,6 +582,8 @@
       function setStickMode(mode) {
         stickMode = mode;
         localStorage.setItem('drone-stick-mode', mode);
+        const configMode = mode === 'jp' ? 'mode1' : 'mode2';
+        if (rateConfig.values.stickMode !== configMode) rateConfig.set({ stickMode: configMode });
         modeButtons.us.classList.toggle('active', mode === 'us');
         modeButtons.jp.classList.toggle('active', mode === 'jp');
         modeButtons.us.setAttribute('aria-pressed', String(mode === 'us'));
@@ -546,7 +593,7 @@
         document.querySelector('#left-bottom').textContent = japanese ? '後退' : '下降';
         document.querySelector('#right-top').textContent = japanese ? '上升' : '前進';
         document.querySelector('#right-bottom').textContent = japanese ? '下降' : '後退';
-        Object.keys(controlState).forEach(key => { controlState[key] = 0; });
+        Object.assign(controlState, { throttle: .5, yaw: 0, pitch: 0, roll: 0 });
         document.querySelector('#left-values').value = japanese ? 'P 0.00 · Y 0.00' : 'T 0.00 · Y 0.00';
         document.querySelector('#right-values').value = japanese ? 'T 0.00 · R 0.00' : 'P 0.00 · R 0.00';
         sendControls(true);
@@ -579,15 +626,6 @@
       const leftOutput = document.querySelector('#left-values');
       const rightOutput = document.querySelector('#right-values');
 
-      sensitivity = Math.max(35, Math.min(100, sensitivity));
-      sensitivityInput.value = String(sensitivity);
-      sensitivityValue.value = `${sensitivity}%`;
-      sensitivityInput.addEventListener('input', () => {
-        sensitivity = Number(sensitivityInput.value);
-        sensitivityValue.value = `${sensitivity}%`;
-        localStorage.setItem('drone-sensitivity', String(sensitivity));
-      });
-
       setInterval(updateArmGesture, 50);
 
       requestAnimationFrame(() => {
@@ -596,7 +634,8 @@
           (x, y) => {
             physicalSticks.left = { x, y };
             const shaped = shapePair(x, y);
-            controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = shaped.y;
+            if (stickMode === 'jp') controlState.pitch = shaped.y;
+            else controlState.throttle = (shaped.y + 1) / 2;
             controlState.yaw = shaped.x;
             leftOutput.value = `${stickMode === 'jp' ? 'P' : 'T'} ${shaped.y.toFixed(2)} · Y ${shaped.x.toFixed(2)}`;
             updateArmGesture();
@@ -604,7 +643,7 @@
           },
           () => {
             physicalSticks.left = { x: 0, y: 0 };
-            controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = 0;
+            controlState[stickMode === 'jp' ? 'pitch' : 'throttle'] = stickMode === 'jp' ? 0 : .5;
             controlState.yaw = 0;
             leftOutput.value = `${stickMode === 'jp' ? 'P' : 'T'} 0.00 · Y 0.00`;
             sendControls(true);
@@ -616,7 +655,8 @@
           (x, y) => {
             physicalSticks.right = { x, y };
             const shaped = shapePair(x, y);
-            controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = shaped.y;
+            if (stickMode === 'jp') controlState.throttle = (shaped.y + 1) / 2;
+            else controlState.pitch = shaped.y;
             controlState.roll = shaped.x;
             rightOutput.value = `${stickMode === 'jp' ? 'T' : 'P'} ${shaped.y.toFixed(2)} · R ${shaped.x.toFixed(2)}`;
             updateArmGesture();
@@ -624,7 +664,7 @@
           },
           () => {
             physicalSticks.right = { x: 0, y: 0 };
-            controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = 0;
+            controlState[stickMode === 'jp' ? 'throttle' : 'pitch'] = stickMode === 'jp' ? .5 : 0;
             controlState.roll = 0;
             rightOutput.value = `${stickMode === 'jp' ? 'T' : 'P'} 0.00 · R 0.00`;
             sendControls(true);
@@ -634,6 +674,13 @@
 
       modeButtons.us.addEventListener('click', () => setStickMode('us'));
       modeButtons.jp.addEventListener('click', () => setStickMode('jp'));
+      bindRatePanel(document.querySelector('#rate-panel'), rateConfig, values => {
+        if (connection?.open) connection.send({ type: 'config', values });
+      });
+      rateConfig.addEventListener('change', event => {
+        const requestedMode = event.detail.stickMode === 'mode1' ? 'jp' : 'us';
+        if (requestedMode !== stickMode) setStickMode(requestedMode);
+      });
       setStickMode(stickMode);
 
       document.querySelectorAll('[data-command]').forEach(button => {
@@ -653,9 +700,14 @@
         connection = peer.connect(peerId, { reliable: false, serialization: 'json' });
         connection.on('open', () => {
           setStatus('已連線', 'connected');
+          connection.send({ type: 'config', values: rateConfig.toJSON() });
           sendControls(true);
         });
         connection.on('data', data => {
+          if (data?.type === 'config') {
+            rateConfig.set(data.values || {});
+            return;
+          }
           if (data?.type !== 'telemetry') return;
           document.querySelector('#altitude').textContent = `${Number(data.altitude).toFixed(1)}m`;
           document.querySelector('#speed').textContent = `${Number(data.speed).toFixed(1)}m/s`;
@@ -667,7 +719,23 @@
           if (data.crashEvent && data.crashEvent !== lastCrashEvent) {
             lastCrashEvent = data.crashEvent;
             showFeedback(`⚠ 墜機：${data.crashReason || '發生碰撞'}`);
-            if (navigator.vibrate) navigator.vibrate([180, 80, 180, 80, 260]);
+            vibrate(HAPTICS.crash);
+          }
+          const assessment = data.assessment;
+          if (assessment) {
+            if (assessment.waypoint > lastWaypoint) {
+              lastWaypoint = assessment.waypoint;
+              vibrate(HAPTICS.waypoint);
+              showFeedback(`通過 P${assessment.waypoint - 1}`);
+            }
+            const scoreBand = Math.floor(Number(assessment.score) / 5) * 5;
+            if (scoreBand < lastScoreBand && assessment.time > 0) vibrate(HAPTICS.penalty);
+            lastScoreBand = scoreBand;
+            if (assessment.completed && lastWaypoint !== 99) {
+              lastWaypoint = 99;
+              vibrate(HAPTICS.complete);
+              showFeedback(`${assessment.passed ? '考核合格' : '考核未通過'} · ${Number(assessment.score).toFixed(1)} 分`);
+            }
           }
         });
         connection.on('close', () => setStatus('連線已中斷', 'error'));
@@ -680,7 +748,7 @@
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-          Object.keys(controlState).forEach(key => { controlState[key] = 0; });
+          Object.assign(controlState, { throttle: .5, yaw: 0, pitch: 0, roll: 0 });
           sendControls(true);
         }
       });
