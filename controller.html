@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
   <title>無人機遙控器</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="canonical" href="https://ericlin241.github.io/drone-simulator/controller.html">
@@ -56,12 +56,12 @@
     .topbar {
       position: relative;
       z-index: 6;
-      min-height: 58px;
-      flex: 0 0 58px;
+      min-height: 52px;
+      flex: 0 0 52px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: max(8px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right)) 8px max(22px, env(safe-area-inset-left));
+      padding: max(6px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) 6px max(18px, env(safe-area-inset-left));
       border-bottom: 1px solid rgba(255,255,255,.09);
       background: rgba(3, 9, 16, .5);
     }
@@ -124,7 +124,7 @@
       align-items: stretch;
       justify-content: space-evenly;
       gap: 2.2vw;
-      padding: 10px max(24px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+      padding: 7px max(20px, env(safe-area-inset-right)) max(9px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
     }
 
     .stick-panel {
@@ -135,12 +135,12 @@
       align-items: center;
       justify-content: center;
       border: 1px solid rgba(255, 255, 255, .08);
-      border-radius: 28px;
+      border-radius: 24px;
       background: rgba(255, 255, 255, .025);
     }
 
     .center-controls {
-      flex: 0 0 clamp(88px, 14vw, 138px);
+      flex: 0 0 clamp(82px, 13vw, 126px);
       display: grid;
       grid-template-columns: 1fr 1fr;
       align-content: center;
@@ -148,8 +148,8 @@
     }
 
     .command-button {
-      min-height: 42px;
-      padding: 7px 4px;
+      min-height: 37px;
+      padding: 6px 4px;
       border: 1px solid rgba(255,255,255,.11);
       border-radius: 11px;
       background: linear-gradient(145deg, rgba(26,49,67,.95), rgba(13,28,42,.95));
@@ -214,9 +214,9 @@
     .tuning-drawer {
       position: absolute;
       z-index: 15;
-      top: 62px;
+      top: 56px;
       right: max(18px, env(safe-area-inset-right));
-      width: min(330px, 45vw);
+      width: min(310px, 43vw);
       max-height: calc(100% - 74px);
       overflow: auto;
       padding: 12px;
@@ -255,7 +255,7 @@
 
     .stick-zone {
       position: absolute;
-      inset: 30px;
+      inset: 34px;
     }
 
     .axis-label {
@@ -604,7 +604,7 @@
           zone,
           mode: 'static',
           position: { left: '50%', top: '50%' },
-          size: Math.min(150, Math.max(92, Math.min(zone.clientWidth, zone.clientHeight) * .72)),
+          size: Math.min(138, Math.max(86, Math.min(zone.clientWidth, zone.clientHeight) * .66)),
           color: '#75ddff',
           restJoystick: true
         });
@@ -723,6 +723,10 @@
           }
           const assessment = data.assessment;
           if (assessment) {
+            if (assessment.time < .5 && assessment.waypoint === 1 && lastWaypoint === 99) {
+              lastWaypoint = 1;
+              lastScoreBand = 100;
+            }
             if (assessment.waypoint > lastWaypoint) {
               lastWaypoint = assessment.waypoint;
               vibrate(HAPTICS.waypoint);
@@ -752,6 +756,11 @@
           sendControls(true);
         }
       });
+      // iOS gesture events and rapid double taps can bypass the viewport flag.
+      document.addEventListener('gesturestart', event => event.preventDefault(), { passive: false });
+      document.addEventListener('gesturechange', event => event.preventDefault(), { passive: false });
+      document.addEventListener('gestureend', event => event.preventDefault(), { passive: false });
+      document.addEventListener('dblclick', event => event.preventDefault(), { passive: false });
     })();
   </script>
 </body>

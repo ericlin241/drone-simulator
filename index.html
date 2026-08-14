@@ -183,31 +183,6 @@
     }
     .course-badge strong { display: block; color: #6edcff; font-size: .76rem; }
 
-    .settings-panel {
-      position: fixed;
-      z-index: 4;
-      top: 205px;
-      left: 20px;
-      width: min(360px, calc(100vw - 40px));
-      max-height: calc(100vh - 290px);
-      overflow: auto;
-      padding: 14px;
-      border: 1px solid rgba(255,255,255,.12);
-      border-radius: 16px;
-      background: rgba(5,15,28,.82);
-      backdrop-filter: blur(16px);
-    }
-    .settings-panel summary { color: #dff7ff; font-size: .78rem; font-weight: 800; cursor: pointer; }
-    .preset-row, .segmented { display: flex; gap: 6px; margin: 10px 0; }
-    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
-    .settings-grid label { color: #8fa8bc; font-size: .65rem; }
-    .settings-grid output { float: right; color: #6edcff; font-family: ui-monospace, monospace; }
-    .settings-grid input { width: 100%; margin: 5px 0 0; accent-color: #43c8f2; }
-    .settings-panel button.active { border-color: #58d9ff; background: rgba(54,190,234,.28); }
-    .environment-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 9px; }
-    .environment-row label { color: #8fa8bc; font-size: .65rem; }
-    .environment-row input { width: 100%; accent-color: #64dfb1; }
-
     .assessment-card {
       position: fixed;
       z-index: 3;
@@ -225,6 +200,24 @@
     .assessment-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; color: #91a7ba; font-size: .6rem; }
     .assessment-meta strong { display: block; color: #e5f6ff; font-family: ui-monospace, monospace; }
     #assessment-result { margin: 8px 0 0; color: #b8cadd; font-size: .67rem; line-height: 1.45; }
+    .data-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .data-actions button { padding: 7px 6px; font-size: .62rem; }
+    .assessment-error { margin: 5px 0 0; color: #91a7ba; font-size: .62rem; }
+    .assessment-error strong { color: #dff7ff; font-family: ui-monospace, monospace; }
+
+    .copyright {
+      position: fixed;
+      z-index: 2;
+      left: 50%;
+      bottom: 7px;
+      margin: 0;
+      color: rgba(220, 237, 248, .48);
+      font-size: .56rem;
+      letter-spacing: .025em;
+      transform: translateX(-50%);
+      pointer-events: none;
+      white-space: nowrap;
+    }
 
     .crash-overlay {
       position: fixed;
@@ -257,7 +250,6 @@
       .telemetry { right: 10px; bottom: 10px; left: 10px; }
       .flight-card { display: none; }
       .course-badge { display: none; }
-      .settings-panel { top: 196px; max-height: 42vh; }
       .assessment-card { display: none; }
     }
   </style>
@@ -281,30 +273,6 @@
     </div>
   </section>
 
-  <details id="rate-panel" class="settings-panel">
-    <summary>遙控調校、速度限制與風場</summary>
-    <div class="preset-row">
-      <button type="button" data-preset="beginner">新手</button>
-      <button type="button" data-preset="standard">標準</button>
-      <button type="button" data-preset="racing">競速</button>
-    </div>
-    <div class="segmented">
-      <button type="button" data-stick-mode="mode2">美國手 Mode 2</button>
-      <button type="button" data-stick-mode="mode1">日本手 Mode 1</button>
-    </div>
-    <div class="settings-grid">
-      <label>最大速度 <output data-output="maxSpeedScale"></output><input data-config="maxSpeedScale" type="range" min="0.1" max="1" step="0.05"></label>
-      <label>油門上限 <output data-output="throttleCap"></output><input data-config="throttleCap" type="range" min="0.1" max="1" step="0.05"></label>
-      <label>RC Rate <output data-output="rcRate"></output><input data-config="rcRate" type="range" min="0.1" max="2" step="0.05"></label>
-      <label>Expo <output data-output="expo"></output><input data-config="expo" type="range" min="0" max="1" step="0.05"></label>
-      <label>Deadband <output data-output="deadband"></output><input data-config="deadband" type="range" min="0" max="0.2" step="0.01"></label>
-    </div>
-    <div class="environment-row">
-      <label>風速 <output id="wind-speed-value">2.0 m/s</output><input id="wind-speed" type="range" min="0" max="12" step="0.5" value="2"></label>
-      <label>風向 <output id="wind-direction-value">35°</output><input id="wind-direction" type="range" min="0" max="359" step="1" value="35"></label>
-    </div>
-  </details>
-
   <section class="flight-card" aria-label="飛行資訊">
     <div><span>FLIGHT</span><strong id="flight-state">未解鎖</strong></div>
     <div><span>ALTITUDE</span><strong id="altitude">1.0 m</strong></div>
@@ -324,12 +292,18 @@
     <div class="assessment-meta">
       <span>航點<strong id="assessment-waypoint">P1 / P7</strong></span>
       <span>時間<strong id="assessment-time">0.0 s</strong></span>
-      <span>偏差<strong id="assessment-error">0.00 m</strong></span>
+      <span>軌跡<strong id="assessment-points">0 點</strong></span>
     </div>
     <p id="assessment-result">起飛後按「開始評分」，依序通過 P1～P7。</p>
+    <p class="assessment-error">路徑偏差：<strong id="assessment-error">0.00 m</strong></p>
+    <div class="data-actions">
+      <button id="download-csv" type="button">下載軌跡 CSV</button>
+      <button id="download-json" type="button">下載完整 JSON</button>
+    </div>
   </section>
 
   <aside class="course-badge"><strong>水平 8 字訓練場 · P1～P7</strong>15 m × 15 m · 左鍵平移 · 右鍵環繞 · 滾輪縮放</aside>
+  <p class="copyright">2026 ericlin241. All rights reserved.</p>
   <div id="crash-overlay" class="crash-overlay" aria-live="assertive">
     <div class="crash-message"><strong>FLIGHT TERMINATED</strong><span id="crash-reason">發生碰撞，請重設位置</span></div>
   </div>
@@ -338,7 +312,7 @@
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script type="module">
-    import { RateConfig, bindRatePanel } from './js/rate-config.js';
+    import { RateConfig } from './js/rate-config.js';
     import { InputManager } from './js/input-manager.js';
     import { PhysicsEngine, FlightMode } from './js/physics-engine.js';
     import { FlightAssessor } from './js/flight-assessor.js';
@@ -396,6 +370,7 @@
         crashReason = '';
         crashSpin.set(0, 0, 0);
         assessor.reset();
+        renderAssessment(assessor.snapshot());
         assessmentUi.button.textContent = '開始評分';
         assessmentUi.result.textContent = '起飛後按「開始評分」，依序通過 P1～P7。';
         document.querySelector('#crash-overlay').classList.remove('visible');
@@ -454,9 +429,6 @@
       }
 
       inputManager = new InputManager(rateConfig, handleCommand);
-      bindRatePanel(document.querySelector('#rate-panel'), rateConfig, values => {
-        if (activeConnection?.open) activeConnection.send({ type: 'config', values });
-      });
 
       function randomPeerId() {
         if (crypto.randomUUID) return `drone-${crypto.randomUUID()}`;
@@ -871,28 +843,18 @@
       inputManager.addEventListener('cycle-camera', () => cameraController.cycle());
       document.querySelector('#camera-button').addEventListener('click', () => cameraController.cycle());
 
-      const windSpeedInput = document.querySelector('#wind-speed');
-      const windDirectionInput = document.querySelector('#wind-direction');
-      function updateWind() {
-        physicsEngine.setWind(windSpeedInput.value, windDirectionInput.value);
-        document.querySelector('#wind-speed-value').textContent = `${Number(windSpeedInput.value).toFixed(1)} m/s`;
-        document.querySelector('#wind-direction-value').textContent = `${windDirectionInput.value}°`;
-      }
-      windSpeedInput.addEventListener('input', updateWind);
-      windDirectionInput.addEventListener('input', updateWind);
-      updateWind();
-
       const assessmentUi = {
         score: document.querySelector('#assessment-score'), waypoint: document.querySelector('#assessment-waypoint'),
-        time: document.querySelector('#assessment-time'), error: document.querySelector('#assessment-error'),
+        time: document.querySelector('#assessment-time'), error: document.querySelector('#assessment-error'), points: document.querySelector('#assessment-points'),
         result: document.querySelector('#assessment-result'), button: document.querySelector('#assessment-button')
       };
       function renderAssessment(result) {
         assessmentUi.score.textContent = result.score.toFixed(1);
-        assessmentUi.score.style.color = result.score >= 70 ? '#5be3a7' : '#ff6379';
+        assessmentUi.score.style.color = result.score >= 60 ? '#5be3a7' : '#ff6379';
         assessmentUi.waypoint.textContent = `P${result.waypoint} / P7`;
         assessmentUi.time.textContent = `${result.time.toFixed(1)} s`;
         assessmentUi.error.textContent = `${result.routeError.toFixed(2)} m`;
+        assessmentUi.points.textContent = `${result.sampleCount} 點`;
       }
       assessor.addEventListener('update', event => renderAssessment(event.detail));
       assessor.addEventListener('finish', event => {
@@ -902,8 +864,25 @@
       });
       assessmentUi.button.addEventListener('click', () => {
         assessor.start(); assessmentUi.button.textContent = '評分中';
-        assessmentUi.result.textContent = '依序通過 P1～P7；綠色軌跡代表高度誤差小於 0.3 m。';
+        assessmentUi.result.textContent = '依序通過 P1～P7；綠色軌跡代表高度誤差小於 0.5 m。';
       });
+
+      function downloadFlightData(format) {
+        if (!assessor.samples.length) {
+          assessmentUi.result.textContent = '目前尚無軌跡資料，請先飛行後再下載。';
+          return;
+        }
+        const content = format === 'csv' ? `\uFEFF${assessor.toCSV()}` : assessor.toJSON();
+        const blob = new Blob([content], { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8' });
+        const link = document.createElement('a');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        link.href = URL.createObjectURL(blob);
+        link.download = `web-flight-lab-${stamp}.${format}`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }
+      document.querySelector('#download-csv').addEventListener('click', () => downloadFlightData('csv'));
+      document.querySelector('#download-json').addEventListener('click', () => downloadFlightData('json'));
 
       function spawnCrashDebris() {
         const material = new THREE.MeshStandardMaterial({ color: 0xff8f32, emissive: 0x5c1700, roughness: .7 });
@@ -1009,13 +988,13 @@
         if (!crashed) {
           const collisionName = findCollision();
           if (collisionName) triggerCrash(`撞上${collisionName}`);
-          if (drone.position.y <= REST_Y) {
-            if (velocity.y < -2.5 || Math.hypot(velocity.x, velocity.z) > 2.8) {
-              triggerCrash('重落地');
-            } else {
-              drone.position.y = REST_Y;
-              if (velocity.y < 0) velocity.y = 0;
-            }
+          if (!crashed && drone.position.y <= REST_Y) {
+            const wasAirborne = armed || Boolean(autoFlight) || Math.abs(velocity.y) > .05;
+            drone.position.y = REST_Y;
+            velocity.set(0, 0, 0);
+            autoFlight = null;
+            armed = false;
+            if (wasAirborne) setFlightState('已降落 · 馬達鎖定', '#ffca62');
           }
         } else if (drone.position.y <= REST_Y * .72) {
           drone.position.y = REST_Y * .72;
