@@ -354,7 +354,7 @@
         <article class="guide-card"><span>PASS</span><strong>60 分以上合格</strong><p>通過 P7 後自動結算完成時間、最終分數與合格結果。</p></article>
       </div>
       <section class="guide-section">
-        <h3>航點順序 · 每點檢測半徑 1.4 m</h3>
+        <h3>航點順序 · P1～P6 半徑 1.6 m、P7 完成圈 2.0 m</h3>
         <div class="waypoint-flow" aria-label="P1 到 P7 航點順序"><b>P1</b><i></i><b>P2</b><i></i><b>P3</b><i></i><b>P4</b><i></i><b>P5</b><i></i><b>P6</b><i></i><b>P7</b></div>
       </section>
       <section class="guide-section">
@@ -924,10 +924,15 @@
       function renderAssessment(result) {
         assessmentUi.score.textContent = result.score.toFixed(1);
         assessmentUi.score.style.color = result.score >= 60 ? '#5be3a7' : '#ff6379';
-        assessmentUi.waypoint.textContent = `P${result.waypoint} / P7`;
+        assessmentUi.waypoint.textContent = result.completed ? '完成' : `P${result.waypoint} / P7`;
         assessmentUi.time.textContent = `${result.time.toFixed(1)} s`;
         assessmentUi.error.textContent = `${result.routeError.toFixed(2)} m`;
         assessmentUi.points.textContent = `${result.sampleCount} 點`;
+        // Reconcile the UI from durable state even if the one-shot finish event is missed.
+        if (result.completed) {
+          assessmentUi.result.textContent = `${result.passed ? '合格 PASS' : '不合格 FAIL'} · ${result.time.toFixed(1)} 秒 · ${result.score.toFixed(1)} 分`;
+          assessmentUi.button.textContent = '重新評分';
+        }
       }
       assessor.addEventListener('update', event => renderAssessment(event.detail));
       assessor.addEventListener('finish', event => {

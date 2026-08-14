@@ -13,6 +13,7 @@ export class FlightAssessor extends EventTarget {
     this.score = 100;
     this.active = false;
     this.startedAt = 0;
+    this.finishedAt = 0;
     this.nextWaypoint = 0;
     this.lastPenaltyAt = 0;
     this.waypoints = [
@@ -32,7 +33,7 @@ export class FlightAssessor extends EventTarget {
 
   reset() {
     this.active = false; this.score = 100; this.nextWaypoint = 0; this.points = []; this.colors = []; this.samples = [];
-    this.accumulator = 0; this.startedAt = 0; this.lastPenaltyAt = 0;
+    this.accumulator = 0; this.startedAt = 0; this.finishedAt = 0; this.lastPenaltyAt = 0;
     this.geometry.setAttribute('position', new this.THREE.Float32BufferAttribute([], 3));
     this.geometry.setAttribute('color', new this.THREE.Float32BufferAttribute([], 3));
   }
@@ -73,13 +74,16 @@ export class FlightAssessor extends EventTarget {
         this.lastPenaltyAt = now;
       }
       const waypoint = this.waypoints[this.nextWaypoint];
-      if (waypoint && waypoint.distanceTo(new this.THREE.Vector2(position.x, position.z)) < 1.4 && altitudeError < 1.2) {
+      const finalWaypoint = this.nextWaypoint === this.waypoints.length - 1;
+      const detectionRadius = finalWaypoint ? 2 : 1.6;
+      const altitudeTolerance = finalWaypoint ? 1.6 : 1.4;
+      if (waypoint && waypoint.distanceTo(new this.THREE.Vector2(position.x, position.z)) < detectionRadius && altitudeError < altitudeTolerance) {
         this.nextWaypoint += 1;
         if (this.nextWaypoint === this.waypoints.length) this.finish();
       }
     }
     this.samples.push({
-      time: this.startedAt ? (performance.now() - this.startedAt) / 1000 : 0,
+      time: this.elapsedSeconds(),
       x: position.x, y: position.y, z: position.z, altitude,
       routeError, altitudeError, score: this.score, waypoint: Math.min(this.nextWaypoint + 1, 7), armed: Boolean(armed)
     });
@@ -88,6 +92,8 @@ export class FlightAssessor extends EventTarget {
   }
 
   finish() {
+    if (!this.active) return;
+    this.finishedAt = performance.now();
     this.active = false;
     const result = this.snapshot();
     result.finished = true;
@@ -100,10 +106,15 @@ export class FlightAssessor extends EventTarget {
       passed: this.score >= 60,
       waypoint: Math.min(this.nextWaypoint + 1, 7),
       routeError, altitudeError,
-      time: this.startedAt ? (performance.now() - this.startedAt) / 1000 : 0,
+      time: this.elapsedSeconds(),
       completed: this.nextWaypoint >= this.waypoints.length,
       sampleCount: this.samples.length
     };
+  }
+
+  elapsedSeconds() {
+    if (!this.startedAt) return 0;
+    return ((this.finishedAt || performance.now()) - this.startedAt) / 1000;
   }
 
   /** Export all retained 50 ms samples for spreadsheet or post-flight analysis. */
