@@ -476,7 +476,8 @@
       function sendCommand(command) {
         if (!connection?.open) return;
         connection.send({ type: 'command', command });
-        vibrate(command === 'emergency' ? HAPTICS.crash : command === 'arm' ? (remoteArmed ? HAPTICS.disarm : HAPTICS.arm) : HAPTICS.command);
+        // ARM success haptics are emitted only after telemetry confirms the state transition.
+        vibrate(command === 'emergency' ? HAPTICS.crash : command === 'arm' && remoteArmed ? HAPTICS.disarm : HAPTICS.command);
       }
 
       function showFeedback(message) {
@@ -552,7 +553,7 @@
             rawGestureTimer = 0;
             if (!gestureSticks.left.active || !gestureSticks.right.active) return;
             sendCommand('arm');
-            showFeedback('馬達已解鎖');
+            showFeedback('解鎖指令已送出');
             gestureStartedAt = 0;
             gestureCooldownUntil = performance.now() + 1500;
           }, 800);
@@ -714,7 +715,12 @@
           document.querySelector('#heading').textContent = `${Math.round(Number(data.heading))}°`;
           document.querySelector('#battery').textContent = `${Math.round(Number(data.battery))}%`;
           const armButton = document.querySelector('#arm-button');
+          const wasRemoteArmed = remoteArmed;
           remoteArmed = Boolean(data.armed);
+          if (remoteArmed && !wasRemoteArmed) {
+            vibrate(HAPTICS.arm);
+            showFeedback('馬達解鎖成功');
+          }
           if (!gestureStartedAt) armButton.textContent = data.armed ? '鎖定馬達' : '解鎖馬達';
           if (data.crashEvent && data.crashEvent !== lastCrashEvent) {
             lastCrashEvent = data.crashEvent;
