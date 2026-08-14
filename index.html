@@ -336,6 +336,7 @@
       const altitudeElement = document.querySelector('#altitude');
       const batteryElement = document.querySelector('#battery');
       let armed = false;
+      let hasTakenOff = false;
       let autoFlight = null;
       let batteryLevel = 100;
       let lastTelemetryAt = 0;
@@ -366,6 +367,7 @@
         yawAngle = 0;
         autoFlight = null;
         armed = false;
+        hasTakenOff = false;
         crashed = false;
         crashReason = '';
         crashSpin.set(0, 0, 0);
@@ -381,6 +383,7 @@
         if (crashed) return;
         crashed = true;
         armed = false;
+        hasTakenOff = false;
         autoFlight = null;
         crashReason = reason;
         crashEventId = Date.now();
@@ -399,6 +402,7 @@
           case 'arm':
             if (crashed) return;
             armed = !armed;
+            hasTakenOff = false;
             autoFlight = null;
             if (!armed) velocity.set(0, 0, 0);
             setFlightState(armed ? '已解鎖' : '未解鎖', armed ? '#55e7aa' : '#ffca62');
@@ -406,6 +410,7 @@
           case 'takeoff':
             if (crashed) return;
             armed = true;
+            hasTakenOff = false;
             autoFlight = 'takeoff';
             setFlightState('自動起飛', '#65dcff');
             break;
@@ -417,6 +422,7 @@
             break;
           case 'emergency':
             armed = false;
+            hasTakenOff = false;
             autoFlight = null;
             Object.assign(controls, { throttle: 0.5, yaw: 0, pitch: 0, roll: 0 });
             velocity.set(0, 0, 0);
@@ -971,6 +977,7 @@
             velocity.y = 0;
             autoFlight = null;
             armed = false;
+            hasTakenOff = false;
             setFlightState('已降落', '#ffca62');
           }
         }
@@ -985,16 +992,21 @@
         });
         yawAngle = physics.yaw;
 
+        // Ground contact becomes a landing only after this arm cycle has genuinely left the pad.
+        if (armed && drone.position.y > REST_Y + .2) hasTakenOff = true;
+
         if (!crashed) {
           const collisionName = findCollision();
           if (collisionName) triggerCrash(`撞上${collisionName}`);
           if (!crashed && drone.position.y <= REST_Y) {
-            const wasAirborne = armed || Boolean(autoFlight) || Math.abs(velocity.y) > .05;
             drone.position.y = REST_Y;
             velocity.set(0, 0, 0);
-            autoFlight = null;
-            armed = false;
-            if (wasAirborne) setFlightState('已降落 · 馬達鎖定', '#ffca62');
+            if (hasTakenOff) {
+              autoFlight = null;
+              armed = false;
+              hasTakenOff = false;
+              setFlightState('已降落 · 馬達鎖定', '#ffca62');
+            }
           }
         } else if (drone.position.y <= REST_Y * .72) {
           drone.position.y = REST_Y * .72;
