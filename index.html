@@ -200,12 +200,36 @@
     .assessment-score { margin: 5px 0; color: #5be3a7; font: 800 1.45rem ui-monospace, monospace; }
     .assessment-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; color: #91a7ba; font-size: .6rem; }
     .assessment-meta strong { display: block; color: #e5f6ff; font-family: ui-monospace, monospace; }
+    .waypoint-progress { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 9px; }
+    .waypoint-chip { display: grid; height: 25px; place-items: center; border: 1px solid rgba(255,255,255,.11); border-radius: 7px; background: rgba(255,255,255,.035); color: #71899c; font: 700 .54rem ui-monospace, monospace; transition: .2s ease; }
+    .waypoint-chip.current { border-color: rgba(89,214,255,.7); color: #77dfff; background: rgba(47,166,207,.18); box-shadow: 0 0 12px rgba(65,198,241,.18); }
+    .waypoint-chip.passed { border-color: rgba(67,226,161,.5); color: #75efb8; background: rgba(44,174,121,.2); }
     #assessment-result { margin: 8px 0 0; color: #b8cadd; font-size: .67rem; line-height: 1.45; }
     .data-actions { display: flex; gap: 6px; margin-top: 8px; }
     .data-actions button { padding: 7px 6px; font-size: .62rem; }
     .guide-open-button { width: 100%; margin-top: 7px; padding: 7px; font-size: .62rem; }
     .assessment-error { margin: 5px 0 0; color: #91a7ba; font-size: .62rem; }
     .assessment-error strong { color: #dff7ff; font-family: ui-monospace, monospace; }
+
+    .waypoint-toast {
+      position: fixed;
+      z-index: 15;
+      top: 18%;
+      left: 50%;
+      padding: 12px 20px;
+      border: 1px solid rgba(79,235,170,.5);
+      border-radius: 999px;
+      background: rgba(7,36,31,.9);
+      box-shadow: 0 14px 45px rgba(0,0,0,.38), 0 0 28px rgba(52,220,151,.14);
+      color: #83f4bf;
+      font-size: .82rem;
+      font-weight: 800;
+      opacity: 0;
+      transform: translate(-50%, -12px) scale(.95);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+    }
+    .waypoint-toast.visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
 
     .assessment-guide {
       position: fixed;
@@ -331,6 +355,9 @@
       <span>時間<strong id="assessment-time">0.0 s</strong></span>
       <span>軌跡<strong id="assessment-points">0 點</strong></span>
     </div>
+    <div id="waypoint-progress" class="waypoint-progress" aria-label="航點通過進度">
+      <span class="waypoint-chip current">P1</span><span class="waypoint-chip">P2</span><span class="waypoint-chip">P3</span><span class="waypoint-chip">P4</span><span class="waypoint-chip">P5</span><span class="waypoint-chip">P6</span><span class="waypoint-chip">P7</span>
+    </div>
     <p id="assessment-result">起飛後按「開始評分」，依序通過 P1～P7。</p>
     <p class="assessment-error">路徑偏差：<strong id="assessment-error">0.00 m</strong></p>
     <div class="data-actions">
@@ -339,6 +366,7 @@
     </div>
     <button id="assessment-guide-button" class="guide-open-button" type="button" aria-expanded="false" aria-controls="assessment-guide">評分說明</button>
   </section>
+  <div id="waypoint-toast" class="waypoint-toast" role="status" aria-live="polite"></div>
 
   <section id="assessment-guide" class="assessment-guide" role="dialog" aria-modal="true" aria-labelledby="guide-title" hidden>
     <div class="guide-shell">
@@ -404,6 +432,7 @@
       const batteryElement = document.querySelector('#battery');
       let armed = false;
       let hasTakenOff = false;
+      let lastPassedWaypoint = 0;
       let autoFlight = null;
       let batteryLevel = 100;
       let lastTelemetryAt = 0;
@@ -435,11 +464,13 @@
         autoFlight = null;
         armed = false;
         hasTakenOff = false;
+        lastPassedWaypoint = 0;
         crashed = false;
         crashReason = '';
         crashSpin.set(0, 0, 0);
         assessor.reset();
         renderAssessment(assessor.snapshot());
+        assessmentUi.toast.classList.remove('visible');
         assessmentUi.button.textContent = '開始評分';
         assessmentUi.result.textContent = '起飛後按「開始評分」，依序通過 P1～P7。';
         document.querySelector('#crash-overlay').classList.remove('visible');
@@ -919,8 +950,15 @@
       const assessmentUi = {
         score: document.querySelector('#assessment-score'), waypoint: document.querySelector('#assessment-waypoint'),
         time: document.querySelector('#assessment-time'), error: document.querySelector('#assessment-error'), points: document.querySelector('#assessment-points'),
-        result: document.querySelector('#assessment-result'), button: document.querySelector('#assessment-button')
+        result: document.querySelector('#assessment-result'), button: document.querySelector('#assessment-button'),
+        chips: [...document.querySelectorAll('#waypoint-progress .waypoint-chip')], toast: document.querySelector('#waypoint-toast')
       };
+      function showWaypointFeedback(number) {
+        assessmentUi.toast.textContent = number === 7 ? '✓ 已通過 P7 · 正在結算' : `✓ 已通過 P${number}`;
+        assessmentUi.toast.classList.add('visible');
+        clearTimeout(showWaypointFeedback.timer);
+        showWaypointFeedback.timer = setTimeout(() => assessmentUi.toast.classList.remove('visible'), 1800);
+      }
       function renderAssessment(result) {
         assessmentUi.score.textContent = result.score.toFixed(1);
         assessmentUi.score.style.color = result.score >= 60 ? '#5be3a7' : '#ff6379';
@@ -928,6 +966,16 @@
         assessmentUi.time.textContent = `${result.time.toFixed(1)} s`;
         assessmentUi.error.textContent = `${result.routeError.toFixed(2)} m`;
         assessmentUi.points.textContent = `${result.sampleCount} 點`;
+        const passedCount = Number(result.passedWaypoints) || 0;
+        assessmentUi.chips.forEach((chip, index) => {
+          chip.classList.toggle('passed', index < passedCount);
+          chip.classList.toggle('current', !result.completed && index === passedCount);
+          chip.textContent = `${index < passedCount ? '✓' : ''}P${index + 1}`;
+        });
+        if (passedCount > lastPassedWaypoint) {
+          lastPassedWaypoint = passedCount;
+          showWaypointFeedback(passedCount);
+        }
         // Reconcile the UI from durable state even if the one-shot finish event is missed.
         if (result.completed) {
           assessmentUi.result.textContent = `${result.passed ? '合格 PASS' : '不合格 FAIL'} · ${result.time.toFixed(1)} 秒 · ${result.score.toFixed(1)} 分`;
@@ -941,6 +989,7 @@
         assessmentUi.button.textContent = '重新評分';
       });
       assessmentUi.button.addEventListener('click', () => {
+        lastPassedWaypoint = 0;
         assessor.start(); assessmentUi.button.textContent = '評分中';
         assessmentUi.result.textContent = '依序通過 P1～P7；綠色軌跡代表高度誤差小於 0.5 m。';
       });

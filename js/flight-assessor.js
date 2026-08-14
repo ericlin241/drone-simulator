@@ -105,6 +105,7 @@ export class FlightAssessor extends EventTarget {
       score: Math.round(this.score * 10) / 10,
       passed: this.score >= 60,
       waypoint: Math.min(this.nextWaypoint + 1, 7),
+      passedWaypoints: this.nextWaypoint,
       routeError, altitudeError,
       time: this.elapsedSeconds(),
       completed: this.nextWaypoint >= this.waypoints.length,

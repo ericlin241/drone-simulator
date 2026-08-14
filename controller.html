@@ -429,7 +429,7 @@
       let gestureCooldownUntil = 0;
       let rawGestureTimer = 0;
       let lastCrashEvent = 0;
-      let lastWaypoint = 1;
+      let lastWaypoint = 0;
       let lastScoreBand = 100;
       let highOutputLatched = false;
       let connection = null;
@@ -752,14 +752,15 @@
           }
           const assessment = data.assessment;
           if (assessment) {
-            if (assessment.time < .5 && assessment.waypoint === 1 && lastWaypoint === 99) {
-              lastWaypoint = 1;
+            const passedWaypoints = Number(assessment.passedWaypoints) || 0;
+            if (!assessment.completed && passedWaypoints === 0 && lastWaypoint === 99) {
+              lastWaypoint = 0;
               lastScoreBand = 100;
             }
-            if (assessment.waypoint > lastWaypoint) {
-              lastWaypoint = assessment.waypoint;
+            if (passedWaypoints > lastWaypoint) {
+              lastWaypoint = passedWaypoints;
               vibrate(HAPTICS.waypoint);
-              showFeedback(`通過 P${assessment.waypoint - 1}`);
+              showFeedback(`✓ 已通過 P${passedWaypoints}`);
             }
             const scoreBand = Math.floor(Number(assessment.score) / 5) * 5;
             if (scoreBand < lastScoreBand && assessment.time > 0) vibrate(HAPTICS.penalty);
