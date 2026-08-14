@@ -217,7 +217,7 @@ export class FlightAssessor extends EventTarget {
       context.font = '15px system-ui, sans-serif'; context.fillStyle = '#b9ccda'; context.fillText(label, 1238, y - 4);
     });
     context.fillStyle = 'rgba(220, 237, 248, .62)'; context.font = '16px system-ui, sans-serif';
-    context.fillText('2026 ericlin241. All rights reserved.', 80, 960);
+    context.fillText('© 2026 ericlin241. All rights reserved.', 80, 960);
     return canvas.toDataURL('image/jpeg', 0.92);
   }
 }
